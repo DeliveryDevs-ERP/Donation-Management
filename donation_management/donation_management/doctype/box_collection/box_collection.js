@@ -26,26 +26,31 @@ frappe.ui.form.on("Box Collection", {
 		frm.set_query("mode_of_payment", () => ({
 			filters: {
 				enabled: 1,
+				type: "Cash",
 			},
 		}));
 
 		frm.set_query("debit_account", () => {
 			const filters = {
 				is_group: 0,
+				account_type: "Cash",
 			};
 
 			if (frm.doc.company) {
 				filters.company = frm.doc.company;
 			}
 
-			if (["Cash", "Bank"].includes(frm.doc.mode_of_payment_type)) {
-				filters.account_type = frm.doc.mode_of_payment_type;
-			}
+			return { filters };
+		});
 
-			if (frm.doc.mode_of_payment_type === "Bank" && frm.doc.donation_head) {
-				filters.account_name = ["like", `%${frm.doc.donation_head}%`];
+		frm.set_query("credit_account", () => {
+			const filters = {
+				is_group: 0,
+				root_type: "Income",
+			};
+			if (frm.doc.company) {
+				filters.company = frm.doc.company;
 			}
-
 			return { filters };
 		});
 	},
@@ -133,6 +138,19 @@ function show_assignment_dialog(frm, title, method) {
 }
 
 function show_collection_dialog(frm) {
+	frappe.call({
+		method: "donation_management.donation_management.api.get_collection_cash_accounting_defaults",
+		args: {
+			source_type: "Box Collection",
+			donation_type: frm.doc.donation_head,
+		},
+		callback(response) {
+			build_collection_dialog(frm, response.message || {});
+		},
+	});
+}
+
+function build_collection_dialog(frm, accounting_defaults) {
 	const fields = [
 		{
 			fieldname: "collection_office",
@@ -159,8 +177,8 @@ function show_collection_dialog(frm) {
 			label: __("Mode of Payment"),
 			options: "Mode of Payment",
 			reqd: 1,
-			default: frm.doc.mode_of_payment,
-			onchange: () => update_dialog_accounting_fields(dialog, "Box Collection", frm.doc.donation_head),
+			default: accounting_defaults.mode_of_payment || frm.doc.mode_of_payment,
+			read_only: 1,
 		},
 		{
 			fieldname: "debit_account",
@@ -168,12 +186,27 @@ function show_collection_dialog(frm) {
 			label: __("Debit Account"),
 			options: "Account",
 			reqd: 1,
-			default: frm.doc.debit_account,
-			get_query: () => ({
-				filters: {
+			default: accounting_defaults.debit_account || frm.doc.debit_account,
+			read_only: 1,
+		},
+		{
+			fieldname: "credit_account",
+			fieldtype: "Link",
+			label: __("Income Account"),
+			options: "Account",
+			reqd: 1,
+			default: frm.doc.credit_account || accounting_defaults.credit_account,
+			get_query: () => {
+				const filters = {
 					is_group: 0,
-				},
-			}),
+					root_type: "Income",
+				};
+				const company = accounting_defaults.company || frm.doc.company;
+				if (company) {
+					filters.company = company;
+				}
+				return { filters };
+			},
 		},
 		{
 			fieldname: "denomination_section",
@@ -220,6 +253,7 @@ function show_collection_dialog(frm) {
 				denominations: denomination_values,
 				mode_of_payment: values.mode_of_payment,
 				debit_account: values.debit_account,
+				credit_account: values.credit_account,
 			}).then(() => {
 				dialog.hide();
 				frm.reload_doc();
@@ -229,30 +263,6 @@ function show_collection_dialog(frm) {
 
 	dialog.show();
 	update_denomination_total(dialog);
-	update_dialog_accounting_fields(dialog, "Box Collection", frm.doc.donation_head);
-}
-
-function update_dialog_accounting_fields(dialog, source_type, donation_type) {
-	const mode_of_payment = dialog.get_value("mode_of_payment");
-	if (!mode_of_payment) {
-		dialog.set_value("debit_account", "");
-		return;
-	}
-
-	frappe.call({
-		method: "donation_management.donation_management.api.get_source_accounting_details",
-		args: {
-			source_type,
-			donation_type,
-			mode_of_payment,
-		},
-		callback(response) {
-			const details = response.message || {};
-			if (details.debit_account) {
-				dialog.set_value("debit_account", details.debit_account);
-			}
-		},
-	});
 }
 
 function update_denomination_total(dialog) {

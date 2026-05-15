@@ -174,6 +174,7 @@ class BoxCollection(Document):
 		denominations=None,
 		mode_of_payment=None,
 		debit_account=None,
+		credit_account=None,
 	):
 		self.ensure_submitted()
 
@@ -201,6 +202,7 @@ class BoxCollection(Document):
 
 		self.mode_of_payment = mode_of_payment or self.mode_of_payment
 		self.debit_account = debit_account or self.debit_account
+		self.credit_account = credit_account or self.credit_account
 		set_collection_accounting_details(self, "Box Collection", self.donation_head)
 		validate_collection_accounting_details(
 			self,

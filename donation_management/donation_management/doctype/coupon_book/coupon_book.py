@@ -33,6 +33,7 @@ class CouponBook(Document):
 		self.set_remaining_pages()
 		self.validate_page_counts()
 		self.validate_stock_available_for_unissued_book()
+		self.set_collected_amount_from_coupons()
 		self.set_accounting_details()
 		self.validate_cash_denominations()
 		self.validate_accounting_details()
@@ -65,6 +66,12 @@ class CouponBook(Document):
 
 	def set_remaining_pages(self):
 		self.remaining_pages = cint(self.total_pages) - cint(self.used_pages)
+
+	def set_collected_amount_from_coupons(self):
+		if self.status not in ("Returned", "Closed") or self.is_new():
+			return
+
+		self.collected_amount = get_coupon_book_collected_amount(self.name)
 
 	def validate_status_transition(self):
 		previous_status = self.get_previous_status()
@@ -253,7 +260,14 @@ def issue_coupon_book(coupon_book):
 
 
 @frappe.whitelist()
-def return_coupon_book(coupon_book, collected_amount, denominations, mode_of_payment=None, debit_account=None):
+def return_coupon_book(
+	coupon_book,
+	collected_amount=None,
+	denominations=None,
+	mode_of_payment=None,
+	debit_account=None,
+	credit_account=None,
+):
 	doc = frappe.get_doc("Coupon Book", coupon_book)
 	if doc.status != "Issued":
 		frappe.throw(frappe._("Only issued Coupon Books can be returned."))
@@ -270,12 +284,30 @@ def return_coupon_book(coupon_book, collected_amount, denominations, mode_of_pay
 				},
 			)
 
-	doc.collected_amount = flt(collected_amount)
+	doc.collected_amount = get_coupon_book_collected_amount(coupon_book)
 	doc.mode_of_payment = mode_of_payment or doc.mode_of_payment
 	doc.debit_account = debit_account or doc.debit_account
+	doc.credit_account = credit_account or doc.credit_account
 	doc.status = "Returned"
 	doc.save()
 	return doc.as_dict()
+
+
+@frappe.whitelist()
+def get_coupon_book_collected_amount(coupon_book):
+	if not coupon_book:
+		return 0
+
+	return flt(
+		frappe.db.get_value(
+			"Coupon",
+			{
+				"coupon_book": coupon_book,
+				"docstatus": ["!=", 2],
+			},
+			"sum(amount)",
+		)
+	)
 
 
 @frappe.whitelist()

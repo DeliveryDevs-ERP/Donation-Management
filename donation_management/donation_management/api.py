@@ -257,6 +257,58 @@ def get_source_accounting_details(company=None, source_type=None, donation_type=
 	return details
 
 
+@frappe.whitelist()
+def get_collection_cash_accounting_defaults(company=None, source_type=None, donation_type=None):
+	company = company or get_default_company()
+	mode_of_payment = get_default_cash_mode_of_payment()
+	details = {
+		"company": company,
+		"mode_of_payment": mode_of_payment,
+		"mode_of_payment_type": "Cash" if mode_of_payment else None,
+		"debit_account": None,
+		"credit_account": None,
+		"cost_center": None,
+	}
+
+	if company:
+		details["debit_account"] = get_default_cash_account(company, mode_of_payment)
+
+	if source_type and donation_type and company:
+		details.update(get_donation_source_account_mapping(company, source_type, donation_type))
+
+	return details
+
+
+def get_default_cash_mode_of_payment():
+	return (
+		frappe.db.get_value("Mode of Payment", {"name": "Cash", "enabled": 1, "type": "Cash"}, "name")
+		or frappe.db.get_value("Mode of Payment", {"enabled": 1, "type": "Cash"}, "name")
+	)
+
+
+def get_default_cash_account(company, mode_of_payment=None):
+	default_account = None
+	if mode_of_payment:
+		default_account = frappe.db.get_value(
+			"Mode of Payment Account",
+			{
+				"parent": mode_of_payment,
+				"company": company,
+			},
+			"default_account",
+		)
+
+	return default_account or frappe.db.get_value(
+		"Account",
+		{
+			"company": company,
+			"is_group": 0,
+			"account_type": "Cash",
+		},
+		"name",
+	)
+
+
 def get_donation_source_account_mapping(company, source_type, donation_type):
 	mapping = frappe.db.get_value(
 		"Donation Source Account Mapping",
@@ -286,21 +338,26 @@ def set_collection_accounting_details(doc, source_type, donation_type):
 	if not doc.company:
 		doc.company = get_default_company()
 
+	if not doc.mode_of_payment:
+		doc.mode_of_payment = get_default_cash_mode_of_payment()
+
 	if doc.mode_of_payment and doc.company:
 		mode_details = get_mode_of_payment_account(doc.company, doc.mode_of_payment, donation_type)
 		doc.mode_of_payment_type = mode_details.get("mode_of_payment_type")
 		if not doc.debit_account:
-			doc.debit_account = mode_details.get("debit_account")
+			doc.debit_account = mode_details.get("debit_account") or get_default_cash_account(
+				doc.company,
+				doc.mode_of_payment,
+			)
 	else:
 		doc.mode_of_payment_type = None
 
 	if source_type and donation_type and doc.company:
 		mapping = get_donation_source_account_mapping(doc.company, source_type, donation_type)
-		doc.credit_account = mapping.get("credit_account")
-		doc.accounting_cost_center = mapping.get("cost_center")
-	else:
-		doc.credit_account = None
-		doc.accounting_cost_center = None
+		if not doc.credit_account:
+			doc.credit_account = mapping.get("credit_account")
+		if not doc.accounting_cost_center:
+			doc.accounting_cost_center = mapping.get("cost_center")
 
 
 def validate_collection_accounting_details(doc, source_type, donation_type, amount):
@@ -318,10 +375,7 @@ def validate_collection_accounting_details(doc, source_type, donation_type, amou
 
 	if not doc.credit_account:
 		frappe.throw(
-			frappe._("Credit Account mapping is required for {0} and Donation Type {1}.").format(
-				source_type,
-				donation_type,
-			)
+			frappe._("Income Account is required for {0} collection.").format(source_type)
 		)
 
 	validate_account_for_company(doc.company, doc.debit_account, "Debit Account")
@@ -329,26 +383,15 @@ def validate_collection_accounting_details(doc, source_type, donation_type, amou
 		doc.company,
 		doc.credit_account,
 		"Credit Account",
-		allowed_root_types=("Income", "Liability", "Equity"),
+		allowed_root_types=("Income",),
 	)
 
-	if doc.mode_of_payment_type in ("Cash", "Bank"):
-		account_type = frappe.db.get_value("Account", doc.debit_account, "account_type")
-		if account_type != doc.mode_of_payment_type:
-			frappe.throw(
-				frappe._("Debit Account must be a {0} account for Mode of Payment {1}.").format(
-					doc.mode_of_payment_type,
-					doc.mode_of_payment,
-				)
-			)
+	if doc.mode_of_payment_type != "Cash":
+		frappe.throw(frappe._("Mode of Payment must be Cash for {0}.").format(source_type))
 
-	if doc.mode_of_payment_type == "Bank" and donation_type:
-		if not account_matches_donation_type(doc.debit_account, donation_type):
-			frappe.throw(
-				frappe._("Debit Account must contain {0} for Bank collections of type {0}.").format(
-					donation_type
-				)
-			)
+	account_type = frappe.db.get_value("Account", doc.debit_account, "account_type")
+	if account_type != "Cash":
+		frappe.throw(frappe._("Debit Account must be a Cash account."))
 
 
 def validate_account_for_company(company, account, label, allowed_root_types=None):
@@ -451,7 +494,10 @@ def get_collection_journal_entry_account_row(account, debit, credit, cost_center
 
 
 def get_collection_journal_entry_user_remark(doc, source_type, reference_name=None):
-	return "{0}: {1}".format(source_type, reference_name or doc.name)
+	if reference_name:
+		return "{0}: {1} | Log: {2}".format(source_type, doc.name, reference_name)
+
+	return "{0}: {1}".format(source_type, doc.name)
 
 
 def set_collection_accounting_fields(doc, journal_entry, status):
