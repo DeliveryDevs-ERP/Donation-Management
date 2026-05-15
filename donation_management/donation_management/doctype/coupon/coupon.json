@@ -1,0 +1,174 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "COP-.########",
+ "creation": "2026-05-08 18:51:37.993594",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "coupon_detail_section",
+  "coupon_book",
+  "coupon_color",
+  "coupon_number",
+  "column_break_coupon",
+  "warehouse",
+  "donor_detail_section",
+  "donor_name",
+  "cnic",
+  "donor_contact_section",
+  "contact",
+  "column_break_khbk",
+  "address",
+  "section_break_emph",
+  "volunteer_name",
+  "area",
+  "column_break_xjfk",
+  "posting_date",
+  "section_break_miro",
+  "amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "coupon_detail_section",
+   "fieldtype": "Section Break",
+   "label": "Coupon Details"
+  },
+  {
+   "fieldname": "coupon_color",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Coupon Color",
+   "read_only": 1
+  },
+  {
+   "fieldname": "coupon_number",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Coupon Number",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "column_break_coupon",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "coupon_book",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Coupon Book",
+   "options": "Coupon Book",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "coupon_book.warehouse",
+   "fieldname": "warehouse",
+   "fieldtype": "Link",
+   "label": "Warehouse",
+   "options": "Warehouse",
+   "read_only": 1
+  },
+  {
+   "fieldname": "donor_detail_section",
+   "fieldtype": "Section Break",
+   "label": "Donor Detail"
+  },
+  {
+   "fieldname": "donor_name",
+   "fieldtype": "Data",
+   "label": "Donor Name"
+  },
+  {
+   "fieldname": "cnic",
+   "fieldtype": "Data",
+   "label": "CNIC"
+  },
+  {
+   "fieldname": "donor_contact_section",
+   "fieldtype": "Section Break",
+   "label": "Donor Contact"
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Phone",
+   "label": "Contact"
+  },
+  {
+   "fieldname": "column_break_khbk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Data",
+   "label": "Address"
+  },
+  {
+   "fieldname": "section_break_emph",
+   "fieldtype": "Section Break",
+   "label": "Volunteer Details"
+  },
+  {
+   "fetch_from": "coupon_book.volunteer_name",
+   "fieldname": "volunteer_name",
+   "fieldtype": "Link",
+   "label": "Volunteer Name",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "area",
+   "fieldtype": "Data",
+   "label": "Area"
+  },
+  {
+   "fieldname": "column_break_xjfk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "label": "Posting Date"
+  },
+  {
+   "fieldname": "section_break_miro",
+   "fieldtype": "Section Break",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "non_negative": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-11 17:42:25.701933",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Coupon",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "search_fields": "coupon_number,donor_name,volunteer_name,coupon_book",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "coupon_number"
+}

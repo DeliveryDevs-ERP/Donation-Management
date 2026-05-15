@@ -1,0 +1,160 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "allow_rename": 1,
+ "autoname": "field:purpose_name",
+ "creation": "2026-05-04 00:00:00",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "purpose_name",
+  "parent_donation_purpose",
+  "is_group",
+  "purpose_group",
+  "column_break_zqsw",
+  "requires_student",
+  "requires_prisoner",
+  "student_mode",
+  "purpose_path",
+  "accounting_section",
+  "account_mappings",
+  "lft",
+  "rgt",
+  "old_parent"
+ ],
+ "fields": [
+  {
+   "fieldname": "purpose_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Purpose Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "parent_donation_purpose",
+   "fieldtype": "Link",
+   "ignore_user_permissions": 1,
+   "in_list_view": 1,
+   "label": "Parent Donation Purpose",
+   "options": "Donation Purpose"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_group",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Group"
+  },
+  {
+   "fieldname": "purpose_group",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Purpose of Donation",
+   "options": "\nGeneral\nSponsorship\nOthers\nWelfare",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_zqsw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_student",
+   "fieldtype": "Check",
+   "label": "Requires Student"
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_prisoner",
+   "fieldtype": "Check",
+   "label": "Requires Prisoner"
+  },
+  {
+   "fieldname": "student_mode",
+   "fieldtype": "Select",
+   "label": "Student Mode",
+   "options": "\nPhysical\nOnline"
+  },
+  {
+   "fieldname": "purpose_path",
+   "fieldtype": "Small Text",
+   "label": "Purpose Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Accounting"
+  },
+  {
+   "fieldname": "account_mappings",
+   "fieldtype": "Table",
+   "label": "Account Mappings",
+   "options": "Donation Purpose Account Mapping"
+  },
+  {
+   "fieldname": "lft",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "lft",
+   "no_copy": 1,
+   "print_hide": 1,
+   "report_hide": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "rgt",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "rgt",
+   "no_copy": 1,
+   "print_hide": 1,
+   "report_hide": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "old_parent",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "ignore_user_permissions": 1,
+   "label": "old_parent",
+   "no_copy": 1,
+   "options": "Donation Purpose",
+   "print_hide": 1,
+   "report_hide": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "icon": "fa fa-sitemap",
+ "is_tree": 1,
+ "links": [],
+ "modified": "2026-05-04 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Donation Purpose",
+ "naming_rule": "By fieldname",
+ "nsm_parent_field": "parent_donation_purpose",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "import": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "purpose_name"
+}

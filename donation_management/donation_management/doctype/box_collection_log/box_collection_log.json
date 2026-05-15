@@ -1,0 +1,177 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "BXCL-.##########",
+ "creation": "2026-04-29 16:22:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "box_collection",
+  "action",
+  "action_date",
+  "status_after",
+  "box_snapshot_section",
+  "donation_box",
+  "box_number",
+  "box_code",
+  "donation_head",
+  "box_shape",
+  "assignment_snapshot_section",
+  "location_type",
+  "location_name",
+  "donor_location",
+  "contact",
+  "staff",
+  "collection_snapshot_section",
+  "collected_amount",
+  "cash_denominations",
+  "journal_entry"
+ ],
+ "fields": [
+  {
+   "fieldname": "box_collection",
+   "fieldtype": "Link",
+   "label": "Box Collection",
+   "options": "Box Collection",
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "\nIssuance\nCollection\nReissuance",
+   "reqd": 1
+  },
+  {
+   "fieldname": "action_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Action Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status_after",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status After"
+  },
+  {
+   "fieldname": "box_snapshot_section",
+   "fieldtype": "Section Break",
+   "label": "Box Snapshot"
+  },
+  {
+   "fieldname": "donation_box",
+   "fieldtype": "Link",
+   "label": "Donation Box",
+   "options": "Donation Box"
+  },
+  {
+   "fieldname": "box_number",
+   "fieldtype": "Data",
+   "label": "Box Number"
+  },
+  {
+   "fieldname": "box_code",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Box Code"
+  },
+  {
+   "fieldname": "donation_head",
+   "fieldtype": "Select",
+   "label": "Donation Head",
+   "options": "\nZakat\nAtiya\nSadqa"
+  },
+  {
+   "fieldname": "box_shape",
+   "fieldtype": "Data",
+   "label": "Box Shape"
+  },
+  {
+   "fieldname": "assignment_snapshot_section",
+   "fieldtype": "Section Break",
+   "label": "Assignment Snapshot"
+  },
+  {
+   "fieldname": "location_type",
+   "fieldtype": "Select",
+   "label": "Location Type",
+   "options": "\nHome\nOffice"
+  },
+  {
+   "fieldname": "location_name",
+   "fieldtype": "Data",
+   "label": "Shop/House Name"
+  },
+  {
+   "fieldname": "donor_location",
+   "fieldtype": "Data",
+   "label": "Address for Box Delivery"
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Data",
+   "label": "Contact"
+  },
+  {
+   "fieldname": "staff",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Staff"
+  },
+  {
+   "fieldname": "collection_snapshot_section",
+   "fieldtype": "Section Break",
+   "label": "Collection Snapshot"
+  },
+  {
+   "fieldname": "collected_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Collected Amount",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "cash_denominations",
+   "fieldtype": "Table",
+   "label": "Cash Denominations",
+   "options": "Cash Denomination"
+  },
+  {
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "label": "Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-29 17:35:07.177175",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Box Collection Log",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

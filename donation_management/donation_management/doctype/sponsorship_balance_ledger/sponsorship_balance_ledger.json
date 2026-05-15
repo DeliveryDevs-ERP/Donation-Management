@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "SBL-.######",
+ "creation": "2026-05-05 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "donor",
+  "donation_order",
+  "posting_datetime",
+  "entry_type",
+  "amount_in",
+  "amount_allocated",
+  "balance_after_entry",
+  "column_break_reference",
+  "beneficiary_type",
+  "student",
+  "quantity",
+  "sponsorship_program",
+  "allocation_row_name"
+ ],
+ "fields": [
+  {
+   "fieldname": "donor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Donor",
+   "options": "Donor",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "donation_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Donation Order",
+   "options": "Donation Order",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "posting_datetime",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Posting Date/Time",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "entry_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Entry Type",
+   "options": "\nDonation Received\nPrevious Balance Used\nStudent Allocation\nPrisoner Allocation",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount_in",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount In",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount_allocated",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount Allocated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "balance_after_entry",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Balance After Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_reference",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "beneficiary_type",
+   "fieldtype": "Select",
+   "label": "Beneficiary Type",
+   "options": "\nStudent\nPrisoner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "student",
+   "fieldtype": "Link",
+   "label": "Student",
+   "options": "Student",
+   "read_only": 1
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Int",
+   "label": "Quantity",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sponsorship_program",
+   "fieldtype": "Link",
+   "label": "Sponsorship Program",
+   "options": "Sponsorship Program",
+   "read_only": 1
+  },
+  {
+   "fieldname": "allocation_row_name",
+   "fieldtype": "Data",
+   "label": "Allocation Row Name",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-05 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Sponsorship Balance Ledger",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
+ "sort_field": "posting_datetime",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "donation_order"
+}

@@ -1,0 +1,273 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "BOX-.####",
+ "creation": "2026-04-28 16:35:47.248765",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "box_number",
+  "box_code",
+  "donation_head",
+  "box_shape",
+  "status",
+  "section_break_gjgj",
+  "location_type",
+  "location_name",
+  "donor_location",
+  "contact",
+  "column_break_guwg",
+  "deployment_officer",
+  "assignment_date",
+  "collection_office",
+  "collection_date",
+  "collected_amount",
+  "accounting_section",
+  "company",
+  "mode_of_payment",
+  "mode_of_payment_type",
+  "debit_account",
+  "credit_account",
+  "accounting_cost_center",
+  "journal_entry",
+  "accounting_status",
+  "column_break_nypz",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "allow_on_submit": 1,
+   "fieldname": "box_number",
+   "fieldtype": "Link",
+   "label": "Donation Box",
+   "options": "Donation Box",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "box_number.box_code",
+   "fieldname": "box_code",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Box Code",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "box_number.donation_head",
+   "fieldname": "donation_head",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Donation Head",
+   "options": "\nZakat\nAtiya\nSadqa",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "box_number.box_shape",
+   "fieldname": "box_shape",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Box Shape",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Available",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Available\nIssued\nCollected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_gjgj",
+   "fieldtype": "Section Break",
+   "label": "Current Assignment"
+  },
+  {
+   "fieldname": "column_break_guwg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "assignment_date",
+   "fieldtype": "Date",
+   "label": "Assignment Date",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "collection_date",
+   "fieldtype": "Date",
+   "label": "Collection Date",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "deployment_officer",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Delivery Staff"
+  },
+  {
+   "fieldname": "column_break_nypz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "collection_office",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Collection Staff"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Box Collection",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "donor_location",
+   "fieldtype": "Data",
+   "label": "Address for Box Delivery"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "location_type",
+   "fieldtype": "Select",
+   "label": "Location Type",
+   "options": "\nHome\nOffice"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "location_name",
+   "fieldtype": "Data",
+   "label": "Shop/House Name"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "contact",
+   "fieldtype": "Data",
+   "label": "Contact"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "collected_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Collected Amount",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Accounting"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Mode of Payment",
+   "options": "Mode of Payment",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "mode_of_payment_type",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Mode of Payment Type",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "debit_account",
+   "fieldtype": "Link",
+   "label": "Debit Account",
+   "options": "Account",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "credit_account",
+   "fieldtype": "Link",
+   "label": "Credit Account",
+   "options": "Account",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "accounting_cost_center",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Accounting Cost Center",
+   "options": "Cost Center",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "label": "Latest Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Not Posted",
+   "fieldname": "accounting_status",
+   "fieldtype": "Select",
+   "label": "Accounting Status",
+   "options": "\nNot Posted\nPosted\nCancelled",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-04-29 18:06:13.613420",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Box Collection",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "box_code"
+}

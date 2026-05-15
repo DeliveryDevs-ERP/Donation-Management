@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "TRUSTEE-.#####",
+ "creation": "2026-04-28 17:51:19.375246",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "trustee_name",
+  "cnic",
+  "old_membership_id",
+  "column_break_vrwf",
+  "status",
+  "remarks",
+  "activation_date",
+  "deactivation_date",
+  "contact_info_section",
+  "contact",
+  "address"
+ ],
+ "fields": [
+  {
+   "fieldname": "trustee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Trustee Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cnic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CNIC",
+   "length": 13,
+   "reqd": 1
+  },
+  {
+   "fieldname": "old_membership_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Old Membership ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_vrwf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "\nActive\nInactive",
+   "reqd": 1
+  },
+  {
+   "default": "Commited",
+   "fieldname": "remarks",
+   "fieldtype": "Select",
+   "label": "Remarks",
+   "options": "Commited\nCasual\nNot Paying",
+   "reqd": 1
+  },
+  {
+   "default": "Today",
+   "fieldname": "activation_date",
+   "fieldtype": "Date",
+   "label": "Activation Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deactivation_date",
+   "fieldtype": "Date",
+   "label": "Deactivation Date",
+   "read_only": 0
+  },
+  {
+   "fieldname": "contact_info_section",
+   "fieldtype": "Section Break",
+   "label": "Contact Info"
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Phone",
+   "label": "Contact",
+   "reqd": 1
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Data",
+   "label": "Address"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-04-29 14:54:24.418608",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Trustee",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "trustee_name"
+}

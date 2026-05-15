@@ -1,0 +1,422 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "DO-.######",
+ "creation": "2026-04-28 15:19:23.764604",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "donor_section",
+  "donor_cnic",
+  "donor_name",
+  "donor_phone_number",
+  "referred_by_trustee",
+  "donor_column_break",
+  "name_on_donation_slip",
+  "donation_posting_date",
+  "company",
+  "mode_of_payment",
+  "mode_of_payment_type",
+  "bank_account",
+  "debit_account",
+  "currency",
+  "purpose_section",
+  "donation_type",
+  "purpose_of_donation",
+  "purpose_column_break",
+  "donation_purpose",
+  "purpose_path",
+  "accounting_section",
+  "credit_account",
+  "accounting_cost_center",
+  "journal_entry",
+  "payment_entry",
+  "accounting_status",
+  "sponsorship_section",
+  "sponsorship_students",
+  "sponsorship_prisoners",
+  "beneficiary_section",
+  "student_name",
+  "student_mode",
+  "prisoner_name",
+  "amount_section",
+  "donation_amount",
+  "allocated_amount",
+  "available_allocation_amount",
+  "previous_sponsorship_balance",
+  "total_sponsored_beneficiaries",
+  "column_break_poyv",
+  "total_donation",
+  "unallocated_amount",
+  "allocation_status",
+  "previous_balance_used",
+  "total_covered_months",
+  "purpose_flags_section",
+  "requires_student",
+  "requires_prisoner"
+ ],
+ "fields": [
+  {
+   "fieldname": "donor_section",
+   "fieldtype": "Section Break",
+   "label": "Donor Details"
+  },
+  {
+   "fieldname": "donor_cnic",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Donor CNIC"
+  },
+  {
+   "fieldname": "donor_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Donor",
+   "options": "Donor",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "donor_name.donor_phone_number",
+   "fieldname": "donor_phone_number",
+   "fieldtype": "Data",
+   "label": "Donor Phone Number",
+   "options": "Phone"
+  },
+  {
+   "fetch_from": "donor_name.referred_by_trustee",
+   "fieldname": "referred_by_trustee",
+   "fieldtype": "Link",
+   "label": "Referred By Trustee",
+   "options": "Trustee",
+   "read_only": 1
+  },
+  {
+   "fieldname": "donor_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "name_on_donation_slip",
+   "fieldtype": "Data",
+   "label": "Name on Donation Slip",
+   "reqd": 1
+  },
+  {
+   "fieldname": "donation_posting_date",
+   "fieldtype": "Datetime",
+   "label": "Donation Posting Date"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "label": "Mode of Payment",
+   "options": "Mode of Payment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "mode_of_payment_type",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Mode of Payment Type",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.mode_of_payment_type == 'Bank'",
+   "fieldname": "bank_account",
+   "fieldtype": "Link",
+   "label": "Bank Account",
+   "mandatory_depends_on": "eval:doc.mode_of_payment_type == 'Bank'",
+   "options": "Account"
+  },
+  {
+   "depends_on": "eval:doc.mode_of_payment",
+   "fieldname": "debit_account",
+   "fieldtype": "Link",
+   "label": "Debit Account",
+   "mandatory_depends_on": "eval:doc.mode_of_payment",
+   "options": "Account"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "purpose_section",
+   "fieldtype": "Section Break",
+   "label": "Purpose"
+  },
+  {
+   "fieldname": "donation_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type of Donation",
+   "options": "\nZakat\nAtiya\nSadqa\nFitra",
+   "reqd": 1
+  },
+  {
+   "fieldname": "purpose_of_donation",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Donation Category",
+   "options": "\nGeneral\nSponsorship\nOthers\nWelfare",
+   "reqd": 1
+  },
+  {
+   "fieldname": "purpose_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "donation_purpose",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Donation Purpose",
+   "options": "Donation Purpose",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "donation_purpose.purpose_path",
+   "fieldname": "purpose_path",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Purpose Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "accounting_section",
+   "fieldtype": "Section Break",
+   "label": "Accounting"
+  },
+  {
+   "fieldname": "credit_account",
+   "fieldtype": "Link",
+   "label": "Donation Purpose (Accounts)",
+   "options": "Account"
+  },
+  {
+   "fieldname": "accounting_cost_center",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Accounting Cost Center",
+   "options": "Cost Center",
+   "read_only": 1
+  },
+  {
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "label": "Journal Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry",
+   "read_only": 1
+  },
+  {
+   "default": "Not Posted",
+   "fieldname": "accounting_status",
+   "fieldtype": "Select",
+   "label": "Accounting Status",
+   "options": "\nNot Posted\nPosted\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount_section",
+   "fieldtype": "Section Break",
+   "label": "Amount"
+  },
+  {
+   "fieldname": "donation_amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Donation Amount",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "total_donation",
+   "fieldtype": "Currency",
+   "label": "Total Donation",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donor_name",
+   "fieldname": "previous_sponsorship_balance",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Previous Sponsorship Balance",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donor_name",
+   "fieldname": "previous_balance_used",
+   "fieldtype": "Currency",
+   "hidden": 1,
+   "label": "Previous Balance Used",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donor_name",
+   "fieldname": "available_allocation_amount",
+   "fieldtype": "Currency",
+   "label": "Available Allocation Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "allocated_amount",
+   "fieldtype": "Currency",
+   "label": "Allocated Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "unallocated_amount",
+   "fieldtype": "Currency",
+   "label": "Unallocated Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "allocation_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Allocation Status",
+   "options": "\nUnallocated\nPartially Allocated\nFully Allocated",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "total_sponsored_beneficiaries",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Total Sponsored Beneficiaries",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "total_covered_months",
+   "fieldtype": "Float",
+   "hidden": 1,
+   "label": "Total Covered Months",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "sponsorship_section",
+   "fieldtype": "Section Break",
+   "label": "Sponsorship Allocation"
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose && doc.requires_student",
+   "fieldname": "sponsorship_students",
+   "fieldtype": "Table",
+   "label": "Sponsorship Students",
+   "options": "Donation Order Sponsorship Allocation"
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose && doc.requires_prisoner",
+   "fieldname": "sponsorship_prisoners",
+   "fieldtype": "Table",
+   "label": "Sponsorship Prisoners",
+   "options": "Donation Order Sponsorship Allocation"
+  },
+  {
+   "fieldname": "beneficiary_section",
+   "fieldtype": "Section Break",
+   "label": "Beneficiary Details"
+  },
+  {
+   "depends_on": "eval:doc.requires_student && doc.purpose_of_donation != 'Sponsorship'",
+   "fieldname": "student_name",
+   "fieldtype": "Link",
+   "label": "Student",
+   "mandatory_depends_on": "eval:doc.requires_student && doc.purpose_of_donation != 'Sponsorship'",
+   "options": "Student"
+  },
+  {
+   "depends_on": "eval:doc.student_mode && doc.purpose_of_donation != 'Sponsorship'",
+   "fieldname": "student_mode",
+   "fieldtype": "Select",
+   "label": "Student Mode",
+   "options": "\nPhysical\nOnline",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.requires_prisoner && doc.purpose_of_donation != 'Sponsorship'",
+   "fieldname": "prisoner_name",
+   "fieldtype": "Data",
+   "label": "Prisoner",
+   "mandatory_depends_on": "eval:doc.requires_prisoner && doc.purpose_of_donation != 'Sponsorship'"
+  },
+  {
+   "fieldname": "purpose_flags_section",
+   "fieldtype": "Section Break",
+   "hidden": 1,
+   "label": "Purpose Flags"
+  },
+  {
+   "default": "0",
+   "fetch_from": "donation_purpose.requires_student",
+   "fieldname": "requires_student",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Requires Student",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "donation_purpose.requires_prisoner",
+   "fieldname": "requires_prisoner",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Requires Prisoner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_poyv",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-05-08 17:51:40.637512",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Donation Order",
+ "naming_rule": "Expression",
+ "owner": "osama.ahmed@deliverydevs.com",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "donor_name"
+}
