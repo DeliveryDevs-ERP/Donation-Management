@@ -6,14 +6,22 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "trustee_details_section",
+  "parent_trustee",
+  "lft",
+  "rgt",
+  "old_parent",
   "trustee_name",
+  "is_group",
+  "column_break_vrwf",
   "cnic",
   "old_membership_id",
-  "column_break_vrwf",
-  "status",
-  "remarks",
+  "section_break_itqw",
   "activation_date",
+  "status",
+  "column_break_ureo",
   "deactivation_date",
+  "remarks",
   "contact_info_section",
   "contact",
   "address"
@@ -71,8 +79,7 @@
   {
    "fieldname": "deactivation_date",
    "fieldtype": "Date",
-   "label": "Deactivation Date",
-   "read_only": 0
+   "label": "Deactivation Date"
   },
   {
    "fieldname": "contact_info_section",
@@ -89,15 +96,63 @@
    "fieldname": "address",
    "fieldtype": "Data",
    "label": "Address"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_group",
+   "fieldtype": "Check",
+   "label": "Is Group"
+  },
+  {
+   "fieldname": "parent_trustee",
+   "fieldtype": "Link",
+   "label": "Parent Trustee",
+   "link_filters": "[[\"Trustee\", \"is_group\", \"=\", 1]]",
+   "options": "Trustee"
+  },
+  {
+   "fieldname": "lft",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Left"
+  },
+  {
+   "fieldname": "rgt",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Right"
+  },
+  {
+   "fieldname": "old_parent",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Old Parent"
+  },
+  {
+   "fieldname": "section_break_itqw",
+   "fieldtype": "Section Break",
+   "label": "Trustee Status"
+  },
+  {
+   "fieldname": "column_break_ureo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "trustee_details_section",
+   "fieldtype": "Section Break",
+   "label": "Trustee Details"
   }
  ],
  "grid_page_length": 50,
+ "icon": "fa fa-sitemap",
  "index_web_pages_for_search": 1,
+ "is_tree": 1,
  "links": [],
- "modified": "2026-04-29 14:54:24.418608",
+ "modified": "2026-05-18 14:46:43.614418",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Trustee",
+ "nsm_parent_field": "parent_trustee",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [

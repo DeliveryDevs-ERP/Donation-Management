@@ -24,6 +24,9 @@ COUPON_SERIES = {
 
 class Coupon(Document):
 	def before_insert(self):
+		if not self.flags.from_coupon_book_return:
+			frappe.throw(frappe._("Coupons are generated automatically when a Coupon Book is returned."))
+
 		self.set_coupon_number()
 
 	def validate(self):
@@ -51,7 +54,7 @@ class Coupon(Document):
 		coupon_book = frappe.db.get_value(
 			"Coupon Book",
 			self.coupon_book,
-			["coupon_type", "coupon_color", "volunteer_name", "warehouse", "status"],
+			["coupon_type", "coupon_color", "volunteer_name", "volunteer_area", "warehouse", "status"],
 			as_dict=True,
 		)
 		if not coupon_book:
@@ -62,6 +65,7 @@ class Coupon(Document):
 
 		self.coupon_color = coupon_book.coupon_color
 		self.volunteer_name = coupon_book.volunteer_name
+		self.area = coupon_book.volunteer_area
 		self.warehouse = coupon_book.warehouse
 
 		return coupon_book

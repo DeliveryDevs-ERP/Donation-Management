@@ -14,46 +14,57 @@
   "donor_column_break",
   "name_on_donation_slip",
   "donation_posting_date",
+  "location",
   "company",
   "mode_of_payment",
   "mode_of_payment_type",
+  "pdc_section",
+  "is_post_dated_cheque",
+  "cheque_number",
+  "cheque_deposit_date",
+  "pdc_status",
+  "pdc_posted_on",
   "bank_account",
   "debit_account",
   "currency",
   "purpose_section",
+  "purpose_details",
   "donation_type",
   "purpose_of_donation",
-  "purpose_column_break",
   "donation_purpose",
   "purpose_path",
   "accounting_section",
   "credit_account",
   "accounting_cost_center",
   "journal_entry",
-  "payment_entry",
   "accounting_status",
   "sponsorship_section",
   "sponsorship_students",
-  "sponsorship_prisoners",
   "beneficiary_section",
   "student_name",
   "student_mode",
   "prisoner_name",
   "amount_section",
   "donation_amount",
-  "allocated_amount",
-  "available_allocation_amount",
-  "previous_sponsorship_balance",
-  "total_sponsored_beneficiaries",
-  "column_break_poyv",
   "total_donation",
+  "sponsorship_amount_section",
+  "sponsorship_amount",
+  "allocated_amount",
   "unallocated_amount",
+  "column_break_poyv",
+  "total_program_amount",
+  "available_allocation_amount",
+  "remaining_program_cost",
   "allocation_status",
+  "previous_sponsorship_balance",
   "previous_balance_used",
+  "sponsored_student_count",
+  "total_sponsored_beneficiaries",
   "total_covered_months",
   "purpose_flags_section",
   "requires_student",
-  "requires_prisoner"
+  "requires_prisoner",
+  "amended_from"
  ],
  "fields": [
   {
@@ -106,6 +117,13 @@
    "label": "Donation Posting Date"
   },
   {
+   "fieldname": "location",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Location",
+   "options": "\nShop\nHead Office\nLahore"
+  },
+  {
    "fieldname": "company",
    "fieldtype": "Link",
    "label": "Company",
@@ -127,19 +145,60 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.mode_of_payment_type == 'Bank'",
+   "depends_on": "eval:doc.mode_of_payment == 'Cheque'",
+   "fieldname": "pdc_section",
+   "fieldtype": "Section Break",
+   "label": "Post-Dated Cheque"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.mode_of_payment == 'Cheque'",
+   "fieldname": "is_post_dated_cheque",
+   "fieldtype": "Check",
+   "label": "Post-Dated Cheque"
+  },
+  {
+   "depends_on": "eval:doc.mode_of_payment == 'Cheque'",
+   "fieldname": "cheque_number",
+   "fieldtype": "Data",
+   "label": "Cheque Number",
+   "mandatory_depends_on": "eval:doc.mode_of_payment == 'Cheque'"
+  },
+  {
+   "depends_on": "eval:doc.mode_of_payment == 'Cheque' && doc.is_post_dated_cheque",
+   "fieldname": "cheque_deposit_date",
+   "fieldtype": "Date",
+   "label": "Cheque Deposit Date",
+   "mandatory_depends_on": "eval:doc.mode_of_payment == 'Cheque' && doc.is_post_dated_cheque"
+  },
+  {
+   "default": "Not Applicable",
+   "fieldname": "pdc_status",
+   "fieldtype": "Select",
+   "label": "PDC Status",
+   "options": "Not Applicable\nPending Deposit\nDeposited",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pdc_posted_on",
+   "fieldtype": "Datetime",
+   "label": "PDC Posted On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:['Cheque', 'Card Payment'].includes(doc.mode_of_payment)",
    "fieldname": "bank_account",
    "fieldtype": "Link",
-   "label": "Bank Account",
-   "mandatory_depends_on": "eval:doc.mode_of_payment_type == 'Bank'",
+   "label": "Deposit Account",
+   "mandatory_depends_on": "eval:['Cheque', 'Card Payment'].includes(doc.mode_of_payment)",
    "options": "Account"
   },
   {
-   "depends_on": "eval:doc.mode_of_payment",
+   "depends_on": "eval:doc.mode_of_payment_type == 'Cash' || (doc.mode_of_payment_type == 'Bank' && !['Cheque', 'Card Payment', 'Bank Draft'].includes(doc.mode_of_payment))",
    "fieldname": "debit_account",
    "fieldtype": "Link",
    "label": "Debit Account",
-   "mandatory_depends_on": "eval:doc.mode_of_payment",
+   "mandatory_depends_on": "eval:doc.mode_of_payment_type == 'Cash' || (doc.mode_of_payment_type == 'Bank' && !['Cheque', 'Card Payment', 'Bank Draft'].includes(doc.mode_of_payment))",
    "options": "Account"
   },
   {
@@ -154,32 +213,35 @@
    "label": "Purpose"
   },
   {
+   "fieldname": "purpose_details",
+   "fieldtype": "Table",
+   "label": "Purpose Details",
+   "options": "Donation Order Purpose Detail",
+   "reqd": 1
+  },
+  {
    "fieldname": "donation_type",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Type of Donation",
-   "options": "\nZakat\nAtiya\nSadqa\nFitra",
-   "reqd": 1
+   "options": "\nZakat\nAtiya\nSadqa\nFitra"
   },
   {
    "fieldname": "purpose_of_donation",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Donation Category",
-   "options": "\nGeneral\nSponsorship\nOthers\nWelfare",
-   "reqd": 1
-  },
-  {
-   "fieldname": "purpose_column_break",
-   "fieldtype": "Column Break"
+   "options": "\nGeneral\nSponsorship\nOthers\nWelfare"
   },
   {
    "fieldname": "donation_purpose",
    "fieldtype": "Link",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Donation Purpose",
-   "options": "Donation Purpose",
-   "reqd": 1
+   "options": "Donation Purpose"
   },
   {
    "fetch_from": "donation_purpose.purpose_path",
@@ -197,6 +259,7 @@
   {
    "fieldname": "credit_account",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Donation Purpose (Accounts)",
    "options": "Account"
   },
@@ -216,13 +279,6 @@
    "read_only": 1
   },
   {
-   "fieldname": "payment_entry",
-   "fieldtype": "Link",
-   "label": "Payment Entry",
-   "options": "Payment Entry",
-   "read_only": 1
-  },
-  {
    "default": "Not Posted",
    "fieldname": "accounting_status",
    "fieldtype": "Select",
@@ -239,14 +295,29 @@
    "fieldname": "donation_amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Donation Amount",
+   "label": "Total Donation Received",
    "non_negative": 1,
+   "read_only": 1,
    "reqd": 1
   },
   {
    "fieldname": "total_donation",
    "fieldtype": "Currency",
-   "label": "Total Donation",
+   "hidden": 1,
+   "label": "Total Donation Received",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "sponsorship_amount_section",
+   "fieldtype": "Section Break",
+   "label": "Sponsorship Amount"
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "sponsorship_amount",
+   "fieldtype": "Currency",
+   "label": "Total Amount",
    "read_only": 1
   },
   {
@@ -266,24 +337,38 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donor_name",
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
    "fieldname": "available_allocation_amount",
    "fieldtype": "Currency",
-   "label": "Available Allocation Amount",
+   "label": "Allocation Amount Available",
    "read_only": 1
   },
   {
    "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
    "fieldname": "allocated_amount",
    "fieldtype": "Currency",
-   "label": "Allocated Amount",
+   "label": "Amount Allocated",
    "read_only": 1
   },
   {
    "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
    "fieldname": "unallocated_amount",
    "fieldtype": "Currency",
-   "label": "Unallocated Amount",
+   "label": "Amount Unallocated",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "total_program_amount",
+   "fieldtype": "Currency",
+   "label": "Total Program Amount",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "remaining_program_cost",
+   "fieldtype": "Currency",
+   "label": "Remaining Cost of Program",
    "read_only": 1
   },
   {
@@ -293,6 +378,13 @@
    "in_list_view": 1,
    "label": "Allocation Status",
    "options": "\nUnallocated\nPartially Allocated\nFully Allocated",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
+   "fieldname": "sponsored_student_count",
+   "fieldtype": "Int",
+   "label": "Total Count",
    "read_only": 1
   },
   {
@@ -319,17 +411,10 @@
    "label": "Sponsorship Allocation"
   },
   {
-   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose && doc.requires_student",
+   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
    "fieldname": "sponsorship_students",
    "fieldtype": "Table",
-   "label": "Sponsorship Students",
-   "options": "Donation Order Sponsorship Allocation"
-  },
-  {
-   "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose && doc.requires_prisoner",
-   "fieldname": "sponsorship_prisoners",
-   "fieldtype": "Table",
-   "label": "Sponsorship Prisoners",
+   "label": "Sponsorship Allocation",
    "options": "Donation Order Sponsorship Allocation"
   },
   {
@@ -387,12 +472,23 @@
   {
    "fieldname": "column_break_poyv",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Donation Order",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
+ "is_submittable": 1,
  "links": [],
- "modified": "2026-05-08 17:51:40.637512",
+ "modified": "2026-06-15 18:44:01.311922",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Donation Order",

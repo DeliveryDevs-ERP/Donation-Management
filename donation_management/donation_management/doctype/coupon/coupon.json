@@ -116,9 +116,11 @@
    "options": "Employee"
   },
   {
+   "fetch_from": "coupon_book.volunteer_area",
    "fieldname": "area",
    "fieldtype": "Data",
-   "label": "Area"
+   "label": "Area",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_xjfk",

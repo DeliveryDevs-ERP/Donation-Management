@@ -106,12 +106,13 @@ def get_student_total_donation(student_name=None, student=None, exclude_donation
 
 
 @frappe.whitelist()
-def get_donor_previous_sponsorship_balance(donor=None, exclude_donation_order=None):
-	if not donor:
+def get_donor_previous_sponsorship_balance(donor=None, donation_type=None, exclude_donation_order=None):
+	if not donor or not donation_type:
 		return 0
 
 	filters = {
 		"donor_name": donor,
+		"donation_type": donation_type,
 		"purpose_of_donation": "Sponsorship",
 		"docstatus": ["!=", 2],
 	}
@@ -181,7 +182,9 @@ def get_mode_of_payment_account(company, mode_of_payment, donation_type=None):
 		"default_account",
 	)
 
-	if mode_of_payment_type == "Bank" and donation_type:
+	if mode_of_payment_type == "Cash":
+		default_account = get_default_cash_account(company, mode_of_payment)
+	elif mode_of_payment_type == "Bank" and donation_type:
 		default_account = get_donation_type_receiving_account(company, mode_of_payment_type, donation_type, default_account)
 
 	return {
@@ -191,6 +194,7 @@ def get_mode_of_payment_account(company, mode_of_payment, donation_type=None):
 
 
 def get_donation_type_receiving_account(company, account_type, donation_type, preferred_account=None):
+	receiving_account_type = get_receiving_account_donation_type(donation_type)
 	if preferred_account and account_matches_donation_type(preferred_account, donation_type):
 		return preferred_account
 
@@ -198,7 +202,7 @@ def get_donation_type_receiving_account(company, account_type, donation_type, pr
 		"company": company,
 		"is_group": 0,
 		"account_type": account_type,
-		"account_name": ["like", "%{0}%".format(donation_type)],
+		"account_name": ["like", "%{0}%".format(receiving_account_type)],
 	}
 	return frappe.db.get_value("Account", filters, "name")
 
@@ -208,10 +212,14 @@ def account_matches_donation_type(account, donation_type):
 	if not account_details:
 		return False
 
-	donation_type = donation_type.lower()
-	return donation_type in (account_details.name or "").lower() or donation_type in (
+	receiving_account_type = get_receiving_account_donation_type(donation_type).lower()
+	return receiving_account_type in (account_details.name or "").lower() or receiving_account_type in (
 		account_details.account_name or ""
 	).lower()
+
+
+def get_receiving_account_donation_type(donation_type):
+	return "Zakat" if donation_type == "Zakat" else "Atiya"
 
 
 def get_donation_purpose_account_mapping(company, donation_type, donation_purpose):
@@ -297,15 +305,40 @@ def get_default_cash_account(company, mode_of_payment=None):
 			},
 			"default_account",
 		)
+		if default_account:
+			account_type = frappe.db.get_value(
+				"Account",
+				{
+					"name": default_account,
+					"company": company,
+					"is_group": 0,
+				},
+				"account_type",
+			)
+			if account_type != "Cash":
+				default_account = None
 
-	return default_account or frappe.db.get_value(
-		"Account",
-		{
-			"company": company,
-			"is_group": 0,
-			"account_type": "Cash",
-		},
-		"name",
+	return (
+		default_account
+		or frappe.db.get_value(
+			"Account",
+			{
+				"company": company,
+				"is_group": 0,
+				"account_type": "Cash",
+				"account_name": ["like", "%Donation Cash%"],
+			},
+			"name",
+		)
+		or frappe.db.get_value(
+			"Account",
+			{
+				"company": company,
+				"is_group": 0,
+				"account_type": "Cash",
+			},
+			"name",
+		)
 	)
 
 
@@ -338,17 +371,10 @@ def set_collection_accounting_details(doc, source_type, donation_type):
 	if not doc.company:
 		doc.company = get_default_company()
 
-	if not doc.mode_of_payment:
-		doc.mode_of_payment = get_default_cash_mode_of_payment()
-
+	doc.mode_of_payment = get_default_cash_mode_of_payment()
 	if doc.mode_of_payment and doc.company:
-		mode_details = get_mode_of_payment_account(doc.company, doc.mode_of_payment, donation_type)
-		doc.mode_of_payment_type = mode_details.get("mode_of_payment_type")
-		if not doc.debit_account:
-			doc.debit_account = mode_details.get("debit_account") or get_default_cash_account(
-				doc.company,
-				doc.mode_of_payment,
-			)
+		doc.mode_of_payment_type = "Cash"
+		doc.debit_account = get_default_cash_account(doc.company, doc.mode_of_payment)
 	else:
 		doc.mode_of_payment_type = None
 

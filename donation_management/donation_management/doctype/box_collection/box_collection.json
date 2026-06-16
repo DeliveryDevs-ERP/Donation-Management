@@ -208,9 +208,8 @@
    "allow_on_submit": 1,
    "fieldname": "credit_account",
    "fieldtype": "Link",
-   "label": "Credit Account",
-   "options": "Account",
-   "read_only": 1
+   "label": "Income Account",
+   "options": "Account"
   },
   {
    "allow_on_submit": 1,

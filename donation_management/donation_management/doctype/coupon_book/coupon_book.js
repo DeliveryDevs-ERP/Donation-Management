@@ -48,6 +48,10 @@ frappe.ui.form.on("Coupon Book", {
 		add_action_buttons(frm);
 	},
 
+	volunteer_name(frm) {
+		set_volunteer_area(frm);
+	},
+
 	coupon_type(frm) {
 		set_coupon_color(frm);
 		check_available_stock(frm);
@@ -168,7 +172,7 @@ function add_action_buttons(frm) {
 		return;
 	}
 
-	if (!frm.doc.status) {
+	if (!frm.doc.status && frappe.user.has_role("Finance Manager")) {
 		frm.add_custom_button(__("Issue"), () => issue_coupon_book(frm), __("Actions"));
 	} else if (frm.doc.status === "Issued") {
 		frm.add_custom_button(__("Return"), () => show_return_dialog(frm), __("Actions"));
@@ -190,34 +194,61 @@ function issue_coupon_book(frm) {
 	});
 }
 
-function show_return_dialog(frm) {
+function set_volunteer_area(frm) {
+	if (!frm.doc.volunteer_name) {
+		frm.set_value("volunteer_area", "");
+		return;
+	}
+
 	frappe.call({
-		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.get_coupon_book_collected_amount",
+		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.get_volunteer_area",
 		args: {
-			coupon_book: frm.doc.name,
+			volunteer_name: frm.doc.volunteer_name,
 		},
 		callback(response) {
-			frappe.call({
-				method: "donation_management.donation_management.api.get_collection_cash_accounting_defaults",
-				args: {
-					source_type: "Coupon Book",
-					donation_type: frm.doc.coupon_type,
-				},
-				callback(defaults_response) {
-					build_return_dialog(frm, flt(response.message), defaults_response.message || {});
-				},
-			});
+			frm.set_value("volunteer_area", response.message || "");
 		},
 	});
 }
 
-function build_return_dialog(frm, collected_amount, accounting_defaults) {
+function show_return_dialog(frm) {
+	frappe.call({
+		method: "donation_management.donation_management.api.get_collection_cash_accounting_defaults",
+		args: {
+			source_type: "Coupon Book",
+			donation_type: frm.doc.coupon_type,
+		},
+		callback(response) {
+			build_return_dialog(frm, response.message || {});
+		},
+	});
+}
+
+function build_return_dialog(frm, accounting_defaults) {
 	const fields = [
+		{
+			fieldname: "used_pages",
+			fieldtype: "Int",
+			label: __("Used Pages"),
+			reqd: 1,
+			non_negative: 1,
+			onchange: () => {
+				update_return_collected_amount(dialog, frm);
+				update_return_denomination_total(dialog);
+			},
+		},
+		{
+			fieldname: "coupon_value",
+			fieldtype: "Currency",
+			label: __("Coupon Value"),
+			default: frm.doc.coupon_value,
+			read_only: 1,
+		},
 		{
 			fieldname: "collected_amount",
 			fieldtype: "Currency",
 			label: __("Collected Amount"),
-			default: collected_amount,
+			default: 0,
 			read_only: 1,
 			reqd: 1,
 		},
@@ -293,7 +324,7 @@ function build_return_dialog(frm, collected_amount, accounting_defaults) {
 		fields,
 		primary_action_label: __("Return"),
 		primary_action(values) {
-			if (!validate_return_denomination_total(dialog)) {
+			if (!validate_return_denomination_total(dialog, frm)) {
 				return;
 			}
 
@@ -304,11 +335,12 @@ function build_return_dialog(frm, collected_amount, accounting_defaults) {
 
 			frappe.call({
 				method: "donation_management.donation_management.doctype.coupon_book.coupon_book.return_coupon_book",
-				args: {
-					coupon_book: frm.doc.name,
-					collected_amount: values.collected_amount,
-					denominations: denomination_rows,
-					mode_of_payment: values.mode_of_payment,
+			args: {
+				coupon_book: frm.doc.name,
+				collected_amount: values.collected_amount,
+				used_pages: values.used_pages,
+				denominations: denomination_rows,
+				mode_of_payment: values.mode_of_payment,
 					debit_account: values.debit_account,
 					credit_account: values.credit_account,
 				},
@@ -322,7 +354,14 @@ function build_return_dialog(frm, collected_amount, accounting_defaults) {
 	});
 
 	dialog.show();
+	update_return_collected_amount(dialog, frm);
 	update_return_denomination_total(dialog);
+}
+
+function update_return_collected_amount(dialog, frm) {
+	const used_pages = cint(dialog.get_value("used_pages"));
+	const coupon_value = cint(frm.doc.coupon_value);
+	dialog.set_value("collected_amount", used_pages * coupon_value);
 }
 
 function update_return_denomination_total(dialog) {
@@ -333,12 +372,18 @@ function update_return_denomination_total(dialog) {
 	dialog.set_value("denomination_total", total);
 }
 
-function validate_return_denomination_total(dialog) {
+function validate_return_denomination_total(dialog, frm) {
+	const used_pages = cint(dialog.get_value("used_pages"));
 	const collected_amount = flt(dialog.get_value("collected_amount"));
 	const denomination_total = flt(dialog.get_value("denomination_total"));
 
-	if (collected_amount <= 0) {
-		frappe.msgprint(__("No collected amount was found from Coupons in this Coupon Book."));
+	if (used_pages <= 0 || collected_amount <= 0) {
+		frappe.msgprint(__("Used Pages must be greater than zero."));
+		return false;
+	}
+
+	if (used_pages > cint(frm.doc.total_pages)) {
+		frappe.msgprint(__("Used Pages cannot exceed Total Pages."));
 		return false;
 	}
 

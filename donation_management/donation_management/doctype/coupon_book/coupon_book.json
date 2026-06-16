@@ -8,11 +8,13 @@
  "field_order": [
   "book_details_section",
   "coupon_type",
+  "coupon_value",
   "coupon_color",
   "status",
   "column_break_book",
   "warehouse",
   "volunteer_name",
+  "volunteer_area",
   "date_section",
   "start_date",
   "expiry_date",
@@ -48,6 +50,14 @@
    "reqd": 1
   },
   {
+   "fieldname": "coupon_value",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Coupon Value",
+   "options": "\n50\n100\n500",
+   "reqd": 1
+  },
+  {
    "fieldname": "coupon_color",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -80,6 +90,12 @@
    "in_list_view": 1,
    "label": "Volunteer Name",
    "options": "Employee"
+  },
+  {
+   "fieldname": "volunteer_area",
+   "fieldtype": "Data",
+   "label": "Volunteer Area",
+   "read_only": 1
   },
   {
    "fieldname": "date_section",
@@ -190,9 +206,8 @@
   {
    "fieldname": "credit_account",
    "fieldtype": "Link",
-   "label": "Credit Account",
-   "options": "Account",
-   "read_only": 1
+   "label": "Income Account",
+   "options": "Account"
   },
   {
    "fieldname": "accounting_cost_center",

@@ -16,10 +16,15 @@
   "donor_cnic",
   "salutation",
   "customer_group",
+  "is_group",
   "column_break0",
   "territory",
   "gender",
   "donor_phone_number",
+  "parent_donor",
+  "lft",
+  "rgt",
+  "old_parent",
   "donor_phone_digits",
   "referred_by_trustee",
   "lead_name",
@@ -644,11 +649,44 @@
    "fieldtype": "Table",
    "label": "Donor Portal Users",
    "options": "Portal User"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_group",
+   "fieldtype": "Check",
+   "label": "Is Group"
+  },
+  {
+   "depends_on": "eval:doc.customer_type != 'Refered by Trustee'",
+   "fieldname": "parent_donor",
+   "fieldtype": "Link",
+   "label": "Parent Donor",
+   "link_filters": "[[\"Donor\", \"is_group\", \"=\", 1]]",
+   "options": "Donor"
+  },
+  {
+   "fieldname": "lft",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Left"
+  },
+  {
+   "fieldname": "rgt",
+   "fieldtype": "Int",
+   "hidden": 1,
+   "label": "Right"
+  },
+  {
+   "fieldname": "old_parent",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Old Parent"
   }
  ],
  "icon": "fa fa-user",
  "image_field": "image",
  "index_web_pages_for_search": 1,
+ "is_tree": 1,
  "links": [
   {
    "group": "Allowed Items",
@@ -656,11 +694,12 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-05-08 15:31:25.110519",
+ "modified": "2026-05-18 14:50:07.499964",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Donor",
  "naming_rule": "By \"Naming Series\" field",
+ "nsm_parent_field": "parent_donor",
  "owner": "osama.ahmed@deliverydevs.com",
  "permissions": [
   {

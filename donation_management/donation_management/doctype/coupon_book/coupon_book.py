@@ -20,15 +20,20 @@ COUPON_COLORS = {
 }
 
 DENOMINATIONS = (10, 20, 50, 100, 500, 1000, 5000)
+COUPON_VALUES = (50, 100, 500)
+FINANCE_MANAGER_ROLE = "Finance Manager"
 
 
 class CouponBook(Document):
 	def validate(self):
 		self.set_defaults()
 		self.validate_coupon_type()
+		self.validate_coupon_value()
 		self.validate_status_transition()
+		self.validate_issue_permission()
 		self.set_coupon_color()
 		self.set_expiry_date()
+		self.set_volunteer_area()
 		self.set_used_pages_from_coupons()
 		self.set_remaining_pages()
 		self.validate_page_counts()
@@ -51,12 +56,19 @@ class CouponBook(Document):
 		if self.coupon_type not in COUPON_COLORS:
 			frappe.throw(frappe._("Coupon Type must be Zakat, Atiya, Fitra, or Sadqa."))
 
+	def validate_coupon_value(self):
+		if cint(self.coupon_value) not in COUPON_VALUES:
+			frappe.throw(frappe._("Coupon Value must be 50, 100, or 500."))
+
 	def set_coupon_color(self):
 		self.coupon_color = COUPON_COLORS.get(self.coupon_type)
 
 	def set_expiry_date(self):
 		if self.start_date:
 			self.expiry_date = add_days(self.start_date, 45)
+
+	def set_volunteer_area(self):
+		self.volunteer_area = get_volunteer_area(self.volunteer_name)
 
 	def set_used_pages_from_coupons(self):
 		if self.is_new():
@@ -190,6 +202,13 @@ class CouponBook(Document):
 				)
 			)
 
+	def validate_issue_permission(self):
+		if self.status != "Issued" or self.get_previous_status() == "Issued":
+			return
+
+		if FINANCE_MANAGER_ROLE not in frappe.get_roles():
+			frappe.throw(frappe._("Only Finance Manager can issue a Coupon Book."))
+
 	def create_inventory_entry_for_status_change(self):
 		previous_status = self.get_previous_status()
 		if previous_status == self.status:
@@ -250,6 +269,9 @@ class CouponBook(Document):
 
 @frappe.whitelist()
 def issue_coupon_book(coupon_book):
+	if FINANCE_MANAGER_ROLE not in frappe.get_roles():
+		frappe.throw(frappe._("Only Finance Manager can issue a Coupon Book."))
+
 	doc = frappe.get_doc("Coupon Book", coupon_book)
 	if doc.status:
 		frappe.throw(frappe._("Only unissued Coupon Books can be issued."))
@@ -260,9 +282,23 @@ def issue_coupon_book(coupon_book):
 
 
 @frappe.whitelist()
+def get_volunteer_area(volunteer_name=None):
+	if not volunteer_name:
+		return None
+
+	employee_meta = frappe.get_meta("Employee")
+	for fieldname in ("area", "custom_area", "branch"):
+		if employee_meta.has_field(fieldname):
+			return frappe.db.get_value("Employee", volunteer_name, fieldname)
+
+	return None
+
+
+@frappe.whitelist()
 def return_coupon_book(
 	coupon_book,
 	collected_amount=None,
+	used_pages=None,
 	denominations=None,
 	mode_of_payment=None,
 	debit_account=None,
@@ -271,6 +307,20 @@ def return_coupon_book(
 	doc = frappe.get_doc("Coupon Book", coupon_book)
 	if doc.status != "Issued":
 		frappe.throw(frappe._("Only issued Coupon Books can be returned."))
+
+	used_pages = cint(used_pages)
+	if used_pages <= 0:
+		frappe.throw(frappe._("Used Pages must be greater than zero when returning a Coupon Book."))
+
+	if used_pages > cint(doc.total_pages):
+		frappe.throw(frappe._("Used Pages cannot exceed Total Pages."))
+
+	if cint(doc.coupon_value) not in COUPON_VALUES:
+		frappe.throw(frappe._("Coupon Value must be 50, 100, or 500 before returning a Coupon Book."))
+
+	calculated_collected_amount = flt(used_pages * cint(doc.coupon_value))
+	if collected_amount is not None and flt(collected_amount) != calculated_collected_amount:
+		frappe.throw(frappe._("Collected Amount must equal Used Pages multiplied by Coupon Value."))
 
 	denominations = frappe.parse_json(denominations) or []
 	doc.set("cash_denominations", [])
@@ -284,13 +334,48 @@ def return_coupon_book(
 				},
 			)
 
-	doc.collected_amount = get_coupon_book_collected_amount(coupon_book)
+	generate_return_coupons(doc, used_pages)
+
+	doc.used_pages = used_pages
+	doc.remaining_pages = cint(doc.total_pages) - used_pages
+	doc.collected_amount = calculated_collected_amount
 	doc.mode_of_payment = mode_of_payment or doc.mode_of_payment
 	doc.debit_account = debit_account or doc.debit_account
 	doc.credit_account = credit_account or doc.credit_account
 	doc.status = "Returned"
 	doc.save()
 	return doc.as_dict()
+
+
+def generate_return_coupons(doc, used_pages):
+	existing_coupon_count = frappe.db.count(
+		"Coupon",
+		{
+			"coupon_book": doc.name,
+			"docstatus": ["!=", 2],
+		},
+	)
+	if existing_coupon_count == used_pages:
+		return
+
+	if existing_coupon_count:
+		frappe.throw(
+			frappe._(
+				"Coupon Book {0} already has {1} Coupon records. Please resolve them before returning the book."
+			).format(doc.name, existing_coupon_count)
+		)
+
+	for _counter in range(used_pages):
+		coupon = frappe.get_doc(
+			{
+				"doctype": "Coupon",
+				"coupon_book": doc.name,
+				"posting_date": today(),
+				"amount": cint(doc.coupon_value),
+			}
+		)
+		coupon.flags.from_coupon_book_return = True
+		coupon.insert(ignore_permissions=True)
 
 
 @frappe.whitelist()

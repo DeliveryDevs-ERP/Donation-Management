@@ -6,7 +6,6 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "student",
   "quantity",
   "sponsorship_program",
   "column_break_totals",
@@ -15,17 +14,12 @@
   "total_program_donation",
   "allocated_amount",
   "covered_months",
+  "covered_duration",
   "remaining_months",
+  "remaining_duration",
   "remaining_amount"
  ],
  "fields": [
-  {
-   "fieldname": "student",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Student",
-   "options": "Student"
-  },
   {
    "default": "1",
    "fieldname": "quantity",
@@ -76,16 +70,31 @@
   {
    "fieldname": "covered_months",
    "fieldtype": "Float",
-   "in_list_view": 1,
+   "hidden": 1,
    "label": "Covered Months",
    "precision": "2",
    "read_only": 1
   },
   {
+   "fieldname": "covered_duration",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Covered Duration",
+   "read_only": 1
+  },
+  {
    "fieldname": "remaining_months",
    "fieldtype": "Float",
+   "hidden": 1,
    "label": "Remaining Months",
    "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remaining_duration",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Remaining Duration",
    "read_only": 1
   },
   {

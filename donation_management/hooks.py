@@ -26,7 +26,9 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/donation_management/css/donation_management.css"
-# app_include_js = "/assets/donation_management/js/donation_management.js"
+app_include_js = [
+	"/assets/donation_management/js/purchase_taxes_and_charges.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/donation_management/css/donation_management.css"
@@ -43,8 +45,13 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_js = {
+	"Journal Entry": "public/js/journal_entry.js",
+	"Additional Salary": "public/js/additional_salary.js",
+}
+doctype_list_js = {
+	"Journal Entry": "public/js/journal_entry_list.js",
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -137,34 +144,24 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"*": {
+		"before_validate": "donation_management.purchase_taxes.force_purchase_tax_deduction",
+	},
+	"Additional Salary": {
+		"before_validate": "donation_management.hr_payroll.sync_additional_salary_controls",
+		"before_update_after_submit": "donation_management.hr_payroll.sync_additional_salary_controls",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"donation_management.tasks.all"
-# 	],
-# 	"daily": [
-# 		"donation_management.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"donation_management.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"donation_management.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"donation_management.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"donation_management.pdc_reminders.send_pdc_reminders",
+	],
+}
 
 # Testing
 # -------
@@ -246,4 +243,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

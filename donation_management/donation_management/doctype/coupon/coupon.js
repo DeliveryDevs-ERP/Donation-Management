@@ -26,6 +26,7 @@ function set_coupon_book_details(frm) {
 			"coupon_type",
 			"coupon_color",
 			"volunteer_name",
+			"volunteer_area",
 			"warehouse",
 			"remaining_pages",
 		])
@@ -42,12 +43,14 @@ function set_coupon_book_details(frm) {
 				frm.set_value("coupon_book", "");
 				frm.set_value("coupon_color", "");
 				frm.set_value("volunteer_name", "");
+				frm.set_value("area", "");
 				frm.set_value("warehouse", "");
 				return;
 			}
 
 			frm.set_value("coupon_color", coupon_book.coupon_color || "");
 			frm.set_value("volunteer_name", coupon_book.volunteer_name || "");
+			frm.set_value("area", coupon_book.volunteer_area || "");
 			frm.set_value("warehouse", coupon_book.warehouse || "");
 		});
 }

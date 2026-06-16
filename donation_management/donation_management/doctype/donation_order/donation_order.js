@@ -1,6 +1,16 @@
 // Copyright (c) 2026, osama.ahmed@deliverydevs.com and contributors
 // For license information, please see license.txt
 
+const sponsorship_days_in_month = 30;
+const prisoner_program_suffix = " - Prisoner";
+const allowed_sponsorship_purposes = [
+	"Sponsorship - Prisoner",
+	"Sponsorship - Student",
+	"Sponsorship - MTC",
+	"Sponsorship - Maktab",
+];
+const bank_draft_mode_of_payment = "Bank Draft";
+
 frappe.ui.form.on("Donation Order", {
 	setup(frm) {
 		frm.set_query("donor_name", () => {
@@ -20,9 +30,6 @@ frappe.ui.form.on("Donation Order", {
 			if (frm.doc.company) {
 				filters.company = frm.doc.company;
 			}
-			if (frm.doc.donation_type) {
-				filters.account_name = ["like", `%${frm.doc.donation_type}%`];
-			}
 			return { filters };
 		});
 
@@ -39,8 +46,8 @@ frappe.ui.form.on("Donation Order", {
 				filters.account_type = frm.doc.mode_of_payment_type;
 			}
 
-			if (frm.doc.mode_of_payment_type === "Bank" && frm.doc.donation_type) {
-				filters.account_name = ["like", `%${frm.doc.donation_type}%`];
+			if (is_bank_draft_mode(frm) && frm.doc.donation_type) {
+				filters.account_name = ["like", `%${get_receiving_account_donation_type(frm.doc.donation_type)}%`];
 			}
 
 			return { filters };
@@ -63,22 +70,66 @@ frappe.ui.form.on("Donation Order", {
 				filters.purpose_group = frm.doc.purpose_of_donation;
 			}
 
+			if (frm.doc.purpose_of_donation === "Sponsorship") {
+				filters.name = ["in", allowed_sponsorship_purposes];
+			}
+
 			return { filters };
 		});
 
-		frm.set_query("student", "sponsorship_students", (doc, cdt, cdn) => {
-			const selected_students = get_selected_sponsorship_students(doc, cdn);
-			if (!selected_students.length) {
-				return {};
+		frm.set_query("donation_purpose", "purpose_details", (doc, cdt, cdn) => {
+			const row = locals[cdt][cdn];
+			const filters = { is_group: 0 };
+			if (row.donation_category) {
+				filters.purpose_group = row.donation_category;
 			}
+			if (row.donation_category === "Sponsorship") {
+				filters.name = ["in", allowed_sponsorship_purposes];
+			}
+			return { filters };
+		});
 
-			return {
-				filters: [["Student", "name", "not in", selected_students]],
-			};
+		frm.set_query("credit_account", "purpose_details", () => {
+			const filters = { is_group: 0, root_type: ["in", ["Income", "Liability", "Equity"]] };
+			if (frm.doc.company) {
+				filters.company = frm.doc.company;
+			}
+			return { filters };
+		});
+
+		frm.set_query("debit_account", "purpose_details", (doc, cdt, cdn) => {
+			const row = locals[cdt][cdn];
+			const filters = { is_group: 0 };
+			if (frm.doc.company) {
+				filters.company = frm.doc.company;
+			}
+			if (["Cash", "Bank"].includes(frm.doc.mode_of_payment_type)) {
+				filters.account_type = frm.doc.mode_of_payment_type;
+			}
+			if (is_bank_draft_mode(frm) && row.donation_type) {
+				filters.account_name = ["like", `%${get_receiving_account_donation_type(row.donation_type)}%`];
+			}
+			return { filters };
+		});
+
+		frm.set_query("sponsorship_program", "sponsorship_students", () => {
+			const program_modes = get_sponsorship_program_modes(frm);
+			if (program_modes.student && !program_modes.prisoner) {
+				return { filters: [["Sponsorship Program", "name", "not like", `%${prisoner_program_suffix}`]] };
+			}
+			if (program_modes.prisoner && !program_modes.student) {
+				return { filters: [["Sponsorship Program", "name", "like", `%${prisoner_program_suffix}`]] };
+			}
+			return {};
 		});
 	},
 
 	refresh(frm) {
+		add_donation_order_action_buttons(frm);
+		hide_legacy_purpose_fields(frm);
+		toggle_purpose_grid_debit_account(frm);
+		toggle_parent_debit_account(frm);
+		update_total_amount_from_purpose_details(frm);
 		update_beneficiary_fields(frm, false);
 		if (frm.is_new()) {
 			set_previous_sponsorship_balance(frm);
@@ -92,6 +143,7 @@ frappe.ui.form.on("Donation Order", {
 		set_value_if_changed(frm, "debit_account", "");
 		set_value_if_changed(frm, "credit_account", "");
 		set_value_if_changed(frm, "accounting_cost_center", "");
+		refresh_all_purpose_rows(frm);
 		update_accounting_fields(frm, true);
 	},
 
@@ -99,23 +151,33 @@ frappe.ui.form.on("Donation Order", {
 		set_value_if_changed(frm, "mode_of_payment_type", "");
 		set_value_if_changed(frm, "bank_account", "");
 		set_value_if_changed(frm, "debit_account", "");
+		if (frm.doc.mode_of_payment !== "Cheque") {
+			set_value_if_changed(frm, "is_post_dated_cheque", 0);
+			set_value_if_changed(frm, "cheque_number", "");
+			set_value_if_changed(frm, "cheque_deposit_date", "");
+		}
+		clear_purpose_row_debit_accounts(frm);
 		update_accounting_fields(frm, true);
 	},
 
 	bank_account(frm) {
-		if (frm.doc.mode_of_payment_type === "Bank") {
-			set_value_if_changed(frm, "debit_account", frm.doc.bank_account || "");
-		}
+		apply_deposit_account_to_purpose_rows(frm);
+		toggle_parent_debit_account(frm);
+	},
+
+	debit_account(frm) {
+		apply_parent_debit_account_to_purpose_rows(frm);
 	},
 
 	donation_type(frm) {
-		if (frm.doc.mode_of_payment_type === "Bank") {
-			set_value_if_changed(frm, "bank_account", "");
-			set_value_if_changed(frm, "debit_account", "");
-		}
 		set_value_if_changed(frm, "credit_account", "");
 		set_value_if_changed(frm, "accounting_cost_center", "");
-		update_accounting_fields(frm, frm.doc.mode_of_payment_type === "Bank");
+		if (is_bank_draft_mode(frm)) {
+			set_value_if_changed(frm, "debit_account", "");
+			clear_purpose_row_debit_accounts(frm);
+		}
+		set_previous_sponsorship_balance(frm);
+		update_accounting_fields(frm);
 	},
 
 	donor_cnic(frm) {
@@ -178,9 +240,19 @@ frappe.ui.form.on("Donation Order", {
 		set_sponsorship_totals(frm);
 	},
 
+	purpose_details_add(frm) {
+		sync_primary_purpose_fields(frm);
+		update_total_amount_from_purpose_details(frm);
+	},
+
+	purpose_details_remove(frm) {
+		sync_primary_purpose_fields(frm);
+		update_total_amount_from_purpose_details(frm);
+		set_sponsorship_totals(frm);
+	},
+
 	sponsorship_students_add(frm) {
 		apply_sponsorship_table_rules(frm);
-		set_student_sponsorship_quantities(frm);
 		set_sponsorship_totals(frm);
 	},
 
@@ -188,38 +260,48 @@ frappe.ui.form.on("Donation Order", {
 		set_sponsorship_totals(frm);
 	},
 
-	sponsorship_prisoners_add(frm) {
-		apply_sponsorship_table_rules(frm);
+});
+
+frappe.ui.form.on("Donation Order Purpose Detail", {
+	donation_type(frm, cdt, cdn) {
+		if (!is_deposit_account_mode(frm)) {
+			set_child_value_if_changed(cdt, cdn, "debit_account", "");
+		}
+		if (is_bank_draft_mode(frm)) {
+			set_value_if_changed(frm, "debit_account", "");
+		}
+		update_purpose_row_details(frm, cdt, cdn);
+	},
+
+	donation_category(frm, cdt, cdn) {
+		set_child_value_if_changed(cdt, cdn, "donation_purpose", "");
+		set_child_value_if_changed(cdt, cdn, "purpose_path", "");
+		if (!is_deposit_account_mode(frm)) {
+			set_child_value_if_changed(cdt, cdn, "debit_account", "");
+		}
+		set_child_value_if_changed(cdt, cdn, "credit_account", "");
+		set_child_value_if_changed(cdt, cdn, "cost_center", "");
+		update_purpose_row_details(frm, cdt, cdn);
+	},
+
+	donation_purpose(frm, cdt, cdn) {
+		update_purpose_row_details(frm, cdt, cdn);
+	},
+
+	amount(frm) {
+		update_total_amount_from_purpose_details(frm);
+		sync_primary_purpose_fields(frm);
 		set_sponsorship_totals(frm);
 	},
 
-	sponsorship_prisoners_remove(frm) {
-		set_sponsorship_totals(frm);
+	debit_account(frm) {
+		sync_primary_purpose_fields(frm);
 	},
 });
 
 frappe.ui.form.on("Donation Order Sponsorship Allocation", {
-	student(frm, cdt, cdn) {
-		const row = locals[cdt][cdn];
-		if (row.parentfield !== "sponsorship_students") {
-			return;
-		}
-
-		if (row.student && is_duplicate_sponsorship_student(frm, row.student, cdn)) {
-			frappe.msgprint(__("Student {0} is already selected in this Donation Order.", [row.student]));
-			set_child_value_if_changed(cdt, cdn, "student", "");
-			return;
-		}
-	},
-
 	quantity(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
-		if (row.parentfield === "sponsorship_students") {
-			set_child_value_if_changed(cdt, cdn, "quantity", 1);
-			set_sponsorship_row_totals(frm, cdt, cdn, "sponsorship_students", 1);
-			return;
-		}
-
 		set_sponsorship_row_totals(frm, cdt, cdn, row.parentfield, get_sponsorship_row_quantity(row));
 	},
 
@@ -310,12 +392,11 @@ function update_accounting_fields(frm, overwrite_debit_account = false) {
 			}
 
 			set_value_if_changed(frm, "mode_of_payment_type", details.mode_of_payment_type || "");
+			toggle_purpose_grid_debit_account(frm);
+			toggle_parent_debit_account(frm);
 
-			if (details.mode_of_payment_type === "Bank") {
-				if (overwrite_debit_account || !frm.doc.bank_account) {
-					set_value_if_changed(frm, "bank_account", details.debit_account || "");
-				}
-				set_value_if_changed(frm, "debit_account", frm.doc.bank_account || details.debit_account || "");
+			if (is_deposit_account_mode(frm)) {
+				apply_deposit_account_to_purpose_rows(frm);
 			} else {
 				set_value_if_changed(frm, "bank_account", "");
 				if (overwrite_debit_account || !frm.doc.debit_account) {
@@ -325,8 +406,254 @@ function update_accounting_fields(frm, overwrite_debit_account = false) {
 
 			set_value_if_changed(frm, "credit_account", details.credit_account || "");
 			set_value_if_changed(frm, "accounting_cost_center", details.cost_center || "");
+			refresh_all_purpose_rows(frm);
 		},
 	});
+}
+
+function add_donation_order_action_buttons(frm) {
+	if (frm.is_new() || !frm.doc.donor_name) {
+		return;
+	}
+
+	const action_group = __("Action");
+
+	frm.add_custom_button(__("History"), () => {
+		frappe.set_route("List", "Donation Order", {
+			donor_name: frm.doc.donor_name,
+		});
+	}, action_group);
+
+	frm.add_custom_button(__("Open Customer"), () => {
+		frappe.set_route("Form", "Donor", frm.doc.donor_name);
+	}, action_group);
+
+	frm.add_custom_button(__("Donor Last Slip"), () => {
+		open_donor_last_slip(frm);
+	}, action_group);
+
+	frm.add_custom_button(__("Previous Donor Balance Summary"), () => {
+		frappe.set_route("query-report", "Donor Balance Report", {
+			donor: frm.doc.donor_name,
+		});
+	}, action_group);
+
+	if (can_create_pdc_journal_entry(frm)) {
+		frm.add_custom_button(__("Create Journal Entry"), () => {
+			create_pdc_journal_entry(frm);
+		}, action_group);
+	}
+}
+
+function can_create_pdc_journal_entry(frm) {
+	return (
+		!frm.is_new() &&
+		frm.doc.docstatus === 1 &&
+		frm.doc.mode_of_payment === "Cheque" &&
+		frm.doc.is_post_dated_cheque &&
+		frm.doc.pdc_status === "Pending Deposit" &&
+		!frm.doc.journal_entry
+	);
+}
+
+function create_pdc_journal_entry(frm) {
+	frappe.call({
+		method: "donation_management.donation_management.doctype.donation_order.donation_order.create_pdc_journal_entry",
+		args: {
+			donation_order: frm.doc.name,
+		},
+		freeze: true,
+		freeze_message: __("Creating Journal Entry..."),
+		callback(response) {
+			const result = response.message || {};
+			frappe.msgprint(
+				__("Journal Entry {0} created.", [
+					result.journal_entry || "",
+				])
+			);
+			frm.reload_doc();
+		},
+	});
+}
+
+function open_donor_last_slip(frm) {
+	frappe.call({
+		method: "frappe.client.get_list",
+		args: {
+			doctype: "Donation Order",
+			fields: ["name"],
+			filters: [
+				["donor_name", "=", frm.doc.donor_name],
+				["name", "!=", frm.doc.name || ""],
+				["docstatus", "!=", 2],
+			],
+			order_by: "donation_posting_date desc, creation desc",
+			limit_page_length: 1,
+		},
+		callback(response) {
+			const last_slip = (response.message || [])[0];
+			if (!last_slip) {
+				frappe.msgprint(__("No previous donation slip found for this donor."));
+				return;
+			}
+
+			frappe.set_route("Form", "Donation Order", last_slip.name);
+		},
+	});
+}
+
+function hide_legacy_purpose_fields(frm) {
+	["donation_type", "purpose_of_donation", "donation_purpose", "purpose_path"].forEach((fieldname) => {
+		frm.toggle_display(fieldname, false);
+	});
+}
+
+function toggle_purpose_grid_debit_account(frm) {
+	const show_row_debit_account = Boolean(frm.doc.mode_of_payment_type) || is_deposit_account_mode(frm);
+	const cash_mode = frm.doc.mode_of_payment_type === "Cash";
+	const manual_bank_mode = is_manual_bank_mode(frm);
+	const bank_draft_mode = is_bank_draft_mode(frm);
+	const deposit_account_mode = is_deposit_account_mode(frm);
+	const grid = frm.fields_dict.purpose_details && frm.fields_dict.purpose_details.grid;
+	if (!grid) {
+		return;
+	}
+
+	grid.update_docfield_property("debit_account", "hidden", show_row_debit_account ? 0 : 1);
+	grid.update_docfield_property("debit_account", "reqd", show_row_debit_account ? 1 : 0);
+	grid.update_docfield_property("debit_account", "read_only", cash_mode || (manual_bank_mode && !bank_draft_mode) || deposit_account_mode ? 1 : 0);
+	frm.refresh_field("purpose_details");
+}
+
+function toggle_parent_debit_account(frm) {
+	const cash_mode = frm.doc.mode_of_payment_type === "Cash";
+	const manual_bank_mode = is_manual_bank_mode(frm);
+	const bank_draft_mode = is_bank_draft_mode(frm);
+	const deposit_account_mode = is_deposit_account_mode(frm);
+
+	frm.toggle_display("debit_account", cash_mode || (manual_bank_mode && !bank_draft_mode) || deposit_account_mode);
+	frm.set_df_property("debit_account", "read_only", deposit_account_mode ? 1 : 0);
+	frm.toggle_reqd("debit_account", cash_mode || (manual_bank_mode && !bank_draft_mode));
+}
+
+function clear_purpose_row_debit_accounts(frm) {
+	(frm.doc.purpose_details || []).forEach((row) => {
+		frappe.model.set_value(row.doctype, row.name, "debit_account", "");
+	});
+}
+
+function apply_parent_debit_account_to_purpose_rows(frm) {
+	if (frm.doc.mode_of_payment_type !== "Cash" && (!is_manual_bank_mode(frm) || is_bank_draft_mode(frm))) {
+		return;
+	}
+
+	(frm.doc.purpose_details || []).forEach((row) => {
+		frappe.model.set_value(row.doctype, row.name, "debit_account", frm.doc.debit_account || "");
+	});
+}
+
+function refresh_all_purpose_rows(frm) {
+	(frm.doc.purpose_details || []).forEach((row) => {
+		update_purpose_row_details(frm, row.doctype, row.name);
+	});
+}
+
+function apply_deposit_account_to_purpose_rows(frm) {
+	if (!is_deposit_account_mode(frm)) {
+		return;
+	}
+
+	set_value_if_changed(frm, "debit_account", frm.doc.bank_account || "");
+	(frm.doc.purpose_details || []).forEach((row) => {
+		frappe.model.set_value(row.doctype, row.name, "debit_account", frm.doc.bank_account || "");
+	});
+}
+
+function update_purpose_row_details(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	if (!row) {
+		return;
+	}
+
+	if (!row.donation_type || !row.donation_purpose || !frm.doc.company) {
+		sync_primary_purpose_fields(frm);
+		return;
+	}
+
+	frappe.db
+		.get_value("Donation Purpose", row.donation_purpose, [
+			"purpose_path",
+			"purpose_group",
+			"requires_student",
+			"requires_prisoner",
+			"student_mode",
+		])
+		.then((purpose_response) => {
+			const purpose = purpose_response.message || {};
+			if (purpose.purpose_group && row.donation_category && purpose.purpose_group !== row.donation_category) {
+				frappe.msgprint(
+					__("Donation Purpose {0} belongs to {1}, not {2}.", [
+						row.donation_purpose,
+						purpose.purpose_group,
+						row.donation_category,
+					])
+				);
+				set_child_value_if_changed(cdt, cdn, "donation_purpose", "");
+				return;
+			}
+
+			if (purpose.purpose_group && !row.donation_category) {
+				set_child_value_if_changed(cdt, cdn, "donation_category", purpose.purpose_group);
+			}
+			set_child_value_if_changed(cdt, cdn, "purpose_path", purpose.purpose_path || "");
+
+			frappe.call({
+				method: "donation_management.donation_management.api.get_donation_order_accounting_details",
+				args: {
+					company: frm.doc.company,
+					donation_type: row.donation_type,
+					donation_purpose: row.donation_purpose,
+					mode_of_payment: frm.doc.mode_of_payment,
+				},
+				callback(response) {
+					const details = response.message || {};
+					if (details.mode_of_payment_type === "Cash") {
+						set_child_value_if_changed(cdt, cdn, "debit_account", details.debit_account || "");
+					} else if (is_deposit_account_mode(frm)) {
+						set_child_value_if_changed(cdt, cdn, "debit_account", frm.doc.bank_account || "");
+					} else if (details.mode_of_payment_type === "Bank") {
+						set_child_value_if_changed(cdt, cdn, "debit_account", frm.doc.debit_account || details.debit_account || "");
+					} else if (details.mode_of_payment_type) {
+						if (!row.debit_account) {
+							set_child_value_if_changed(cdt, cdn, "debit_account", details.debit_account || "");
+						}
+					} else {
+						set_child_value_if_changed(cdt, cdn, "debit_account", "");
+					}
+					set_child_value_if_changed(cdt, cdn, "credit_account", details.credit_account || "");
+					set_child_value_if_changed(cdt, cdn, "cost_center", details.cost_center || "");
+					sync_primary_purpose_fields(frm);
+					update_beneficiary_fields(frm, true);
+				},
+			});
+		});
+}
+
+function sync_primary_purpose_fields(frm) {
+	const rows = frm.doc.purpose_details || [];
+	const primary_row = rows.find((row) => row.donation_category === "Sponsorship") || rows[0] || {};
+	set_value_if_changed(frm, "donation_type", primary_row.donation_type || "");
+	set_value_if_changed(frm, "purpose_of_donation", primary_row.donation_category || "");
+	set_value_if_changed(frm, "donation_purpose", primary_row.donation_purpose || "");
+	set_value_if_changed(frm, "purpose_path", primary_row.purpose_path || "");
+	set_value_if_changed(frm, "credit_account", primary_row.credit_account || "");
+	set_value_if_changed(frm, "accounting_cost_center", primary_row.cost_center || "");
+	set_previous_sponsorship_balance(frm);
+}
+
+function update_total_amount_from_purpose_details(frm) {
+	const total_amount = (frm.doc.purpose_details || []).reduce((total, row) => total + flt(row.amount), 0);
+	set_value_if_changed(frm, "donation_amount", total_amount);
 }
 
 function set_donor_from_phone(frm) {
@@ -449,8 +776,7 @@ function update_beneficiary_fields(frm, clear_hidden_values) {
 	const requires_prisoner = cint(frm.doc.requires_prisoner);
 	const is_sponsorship = frm.doc.purpose_of_donation === "Sponsorship";
 	const has_donation_purpose = Boolean(frm.doc.donation_purpose);
-	const show_student_sponsorship = is_sponsorship && has_donation_purpose && requires_student;
-	const show_prisoner_sponsorship = is_sponsorship && has_donation_purpose && requires_prisoner;
+	const show_sponsorship_allocation = is_sponsorship && has_donation_purpose;
 
 	frm.toggle_display("beneficiary_section", requires_student || requires_prisoner);
 	frm.toggle_display("student_name", requires_student && !is_sponsorship);
@@ -458,9 +784,8 @@ function update_beneficiary_fields(frm, clear_hidden_values) {
 	frm.toggle_display("student_mode", requires_student && frm.doc.student_mode && !is_sponsorship);
 	frm.toggle_display("prisoner_name", requires_prisoner && !is_sponsorship);
 	frm.toggle_reqd("prisoner_name", requires_prisoner && !is_sponsorship);
-	frm.toggle_display("sponsorship_section", show_student_sponsorship || show_prisoner_sponsorship);
-	frm.toggle_display("sponsorship_students", show_student_sponsorship);
-	frm.toggle_display("sponsorship_prisoners", show_prisoner_sponsorship);
+	frm.toggle_display("sponsorship_section", show_sponsorship_allocation);
+	frm.toggle_display("sponsorship_students", show_sponsorship_allocation);
 	apply_sponsorship_table_rules(frm);
 
 	if (clear_hidden_values && (!requires_student || is_sponsorship)) {
@@ -472,42 +797,21 @@ function update_beneficiary_fields(frm, clear_hidden_values) {
 		set_value_if_changed(frm, "prisoner_name", "");
 	}
 
-	if (clear_hidden_values && !show_student_sponsorship) {
+	if (clear_hidden_values && !show_sponsorship_allocation) {
 		frm.clear_table("sponsorship_students");
 		frm.refresh_field("sponsorship_students");
-	}
-
-	if (clear_hidden_values && !show_prisoner_sponsorship) {
-		frm.clear_table("sponsorship_prisoners");
-		frm.refresh_field("sponsorship_prisoners");
 	}
 
 	set_sponsorship_totals(frm);
 }
 
 function apply_sponsorship_table_rules(frm) {
-	const show_student_sponsorship =
+	const show_sponsorship_allocation =
 		frm.doc.purpose_of_donation === "Sponsorship"
-		&& Boolean(frm.doc.donation_purpose)
-		&& cint(frm.doc.requires_student);
-	const show_prisoner_sponsorship =
-		frm.doc.purpose_of_donation === "Sponsorship"
-		&& Boolean(frm.doc.donation_purpose)
-		&& cint(frm.doc.requires_prisoner);
+		&& Boolean(frm.doc.donation_purpose);
 
-	if (show_student_sponsorship) {
-		set_student_sponsorship_quantities(frm);
+	if (show_sponsorship_allocation) {
 		configure_sponsorship_grid(frm, "sponsorship_students", {
-			student: { visible: true, reqd: true, read_only: false },
-			quantity: { visible: false, reqd: false, read_only: true },
-		});
-		return;
-	}
-
-	if (show_prisoner_sponsorship) {
-		clear_prisoner_sponsorship_students(frm);
-		configure_sponsorship_grid(frm, "sponsorship_prisoners", {
-			student: { visible: false, reqd: false, read_only: true },
 			quantity: { visible: true, reqd: true, read_only: false },
 		});
 	}
@@ -519,7 +823,7 @@ function configure_sponsorship_grid(frm, table_fieldname, field_rules) {
 		return;
 	}
 
-	["student", "quantity"].forEach((fieldname) => {
+	["quantity"].forEach((fieldname) => {
 		set_grid_field_property(grid, fieldname, "hidden", 0);
 		set_grid_field_property(grid, fieldname, "read_only", 0);
 		set_grid_field_property(grid, fieldname, "reqd", 0);
@@ -549,24 +853,8 @@ function set_grid_field_property(grid, fieldname, property, value) {
 	}
 }
 
-function set_student_sponsorship_quantities(frm) {
-	(frm.doc.sponsorship_students || []).forEach((row) => {
-		if (cint(row.quantity) !== 1) {
-			frappe.model.set_value(row.doctype, row.name, "quantity", 1);
-		}
-	});
-}
-
-function clear_prisoner_sponsorship_students(frm) {
-	(frm.doc.sponsorship_prisoners || []).forEach((row) => {
-		if (row.student) {
-			frappe.model.set_value(row.doctype, row.name, "student", "");
-		}
-	});
-}
-
 function set_previous_sponsorship_balance(frm) {
-	if (frm.doc.purpose_of_donation !== "Sponsorship" || !frm.doc.donor_name) {
+	if (frm.doc.purpose_of_donation !== "Sponsorship" || !frm.doc.donor_name || !frm.doc.donation_type) {
 		set_value_if_changed(frm, "previous_sponsorship_balance", 0);
 		set_value_if_changed(frm, "previous_balance_used", 0);
 		set_sponsorship_totals(frm);
@@ -577,6 +865,7 @@ function set_previous_sponsorship_balance(frm) {
 		method: "donation_management.donation_management.api.get_donor_previous_sponsorship_balance",
 		args: {
 			donor: frm.doc.donor_name,
+			donation_type: frm.doc.donation_type,
 			exclude_donation_order: frm.doc.name,
 		},
 		callback(response) {
@@ -586,18 +875,6 @@ function set_previous_sponsorship_balance(frm) {
 			set_sponsorship_totals(frm);
 		},
 	});
-}
-
-function get_selected_sponsorship_students(doc, current_cdn) {
-	return (doc.sponsorship_students || [])
-		.filter((row) => row.name !== current_cdn && row.student)
-		.map((row) => row.student);
-}
-
-function is_duplicate_sponsorship_student(frm, student, current_cdn) {
-	return (frm.doc.sponsorship_students || []).some(
-		(row) => row.name !== current_cdn && row.student === student
-	);
 }
 
 function set_student_total_donation(frm) {
@@ -661,11 +938,19 @@ function set_sponsorship_row_totals(frm, cdt, cdn, table_fieldname, quantity) {
 	const allocated_amount = flt(row.allocated_amount);
 	const total_program_donation = monthly_donation * duration_months * quantity;
 	const monthly_total = monthly_donation * quantity;
-	const covered_months = monthly_total ? Math.min(allocated_amount / monthly_total, duration_months) : 0;
+	const total_days = Math.round(duration_months * sponsorship_days_in_month);
+	const covered_days = monthly_total
+		? Math.min(Math.round((allocated_amount / monthly_total) * sponsorship_days_in_month), total_days)
+		: 0;
+	const remaining_days = Math.max(total_days - covered_days, 0);
+	const covered_months = covered_days / sponsorship_days_in_month;
+	const remaining_months = remaining_days / sponsorship_days_in_month;
 
 	set_child_value_if_changed(cdt, cdn, "total_program_donation", total_program_donation);
 	set_child_value_if_changed(cdt, cdn, "covered_months", covered_months);
-	set_child_value_if_changed(cdt, cdn, "remaining_months", Math.max(duration_months - covered_months, 0));
+	set_child_value_if_changed(cdt, cdn, "covered_duration", format_sponsorship_duration(covered_days));
+	set_child_value_if_changed(cdt, cdn, "remaining_months", remaining_months);
+	set_child_value_if_changed(cdt, cdn, "remaining_duration", format_sponsorship_duration(remaining_days));
 	set_child_value_if_changed(
 		cdt,
 		cdn,
@@ -678,10 +963,6 @@ function set_sponsorship_row_totals(frm, cdt, cdn, table_fieldname, quantity) {
 }
 
 function get_sponsorship_row_quantity(row) {
-	if (row.parentfield === "sponsorship_students") {
-		return 1;
-	}
-
 	return cint(row.quantity);
 }
 
@@ -689,40 +970,109 @@ function set_sponsorship_totals(frm) {
 	if (frm.doc.purpose_of_donation !== "Sponsorship") {
 		set_value_if_changed(frm, "previous_sponsorship_balance", 0);
 		set_value_if_changed(frm, "previous_balance_used", 0);
+		set_value_if_changed(frm, "sponsorship_amount", 0);
 		set_value_if_changed(frm, "available_allocation_amount", 0);
 		set_value_if_changed(frm, "allocated_amount", 0);
 		set_value_if_changed(frm, "unallocated_amount", 0);
+		set_value_if_changed(frm, "total_program_amount", 0);
+		set_value_if_changed(frm, "remaining_program_cost", 0);
 		set_value_if_changed(frm, "allocation_status", "");
+		set_value_if_changed(frm, "sponsored_student_count", 0);
 		set_value_if_changed(frm, "total_sponsored_beneficiaries", 0);
 		set_value_if_changed(frm, "total_covered_months", 0);
 		return;
 	}
 
-	const student_rows = frm.doc.sponsorship_students || [];
-	const prisoner_rows = frm.doc.sponsorship_prisoners || [];
-	const allocated_amount = [...student_rows, ...prisoner_rows].reduce(
+	const allocation_rows = frm.doc.sponsorship_students || [];
+	const allocated_amount = allocation_rows.reduce(
 		(total, row) => total + flt(row.allocated_amount),
 		0
 	);
-	const total_sponsored_beneficiaries =
-		student_rows.length + prisoner_rows.reduce((total, row) => total + cint(row.quantity), 0);
-	const total_covered_months = [...student_rows, ...prisoner_rows].reduce(
+	const total_program_amount = allocation_rows.reduce(
+		(total, row) => total + flt(row.total_program_donation),
+		0
+	);
+	const total_sponsored_beneficiaries = allocation_rows.reduce(
+		(total, row) => total + cint(row.quantity),
+		0
+	);
+	const total_covered_months = allocation_rows.reduce(
 		(total, row) => total + flt(row.covered_months),
 		0
 	);
-	const available_allocation_amount = flt(frm.doc.donation_amount) + flt(frm.doc.previous_balance_used);
+	const sponsorship_amount = get_sponsorship_purpose_amount(frm);
+	const available_allocation_amount = sponsorship_amount + flt(frm.doc.previous_balance_used);
 
 	set_value_if_changed(frm, "total_donation", flt(frm.doc.donation_amount));
+	set_value_if_changed(frm, "sponsorship_amount", sponsorship_amount);
 	set_value_if_changed(frm, "available_allocation_amount", available_allocation_amount);
 	set_value_if_changed(frm, "allocated_amount", allocated_amount);
 	set_value_if_changed(frm, "unallocated_amount", available_allocation_amount - allocated_amount);
+	set_value_if_changed(frm, "total_program_amount", total_program_amount);
+	set_value_if_changed(frm, "remaining_program_cost", Math.max(total_program_amount - allocated_amount, 0));
 	set_value_if_changed(frm, "allocation_status", get_allocation_status(frm, allocated_amount));
+	set_value_if_changed(frm, "sponsored_student_count", total_sponsored_beneficiaries);
 	set_value_if_changed(frm, "total_sponsored_beneficiaries", total_sponsored_beneficiaries);
 	set_value_if_changed(frm, "total_covered_months", total_covered_months);
 }
 
+function is_prisoner_sponsorship_program(program_name) {
+	return Boolean(program_name && program_name.endsWith(prisoner_program_suffix));
+}
+
+function get_sponsorship_program_modes(frm) {
+	const modes = {
+		student: false,
+		prisoner: false,
+	};
+
+	(frm.doc.purpose_details || []).forEach((row) => {
+		if (row.donation_category !== "Sponsorship") {
+			return;
+		}
+
+		if (row.donation_purpose === "Sponsorship - Prisoner") {
+			modes.prisoner = true;
+		} else {
+			modes.student = true;
+		}
+	});
+
+	return modes;
+}
+
+function format_sponsorship_duration(total_days) {
+	total_days = Math.max(cint(total_days), 0);
+	const months = Math.floor(total_days / sponsorship_days_in_month);
+	const days = total_days % sponsorship_days_in_month;
+	const parts = [];
+	if (months) {
+		parts.push(__("{0} month{1}", [months, months === 1 ? "" : "s"]));
+	}
+	if (days) {
+		parts.push(__("{0} day{1}", [days, days === 1 ? "" : "s"]));
+	}
+	return parts.join(" ") || __("0 days");
+}
+
+function get_receiving_account_donation_type(donation_type) {
+	return donation_type === "Zakat" ? "Zakat" : "Atiya";
+}
+
+function is_deposit_account_mode(frm) {
+	return ["Cheque", "Card Payment"].includes(frm.doc.mode_of_payment);
+}
+
+function is_bank_draft_mode(frm) {
+	return frm.doc.mode_of_payment === bank_draft_mode_of_payment;
+}
+
+function is_manual_bank_mode(frm) {
+	return frm.doc.mode_of_payment_type === "Bank" && !is_deposit_account_mode(frm);
+}
+
 function get_allocation_status(frm, allocated_amount) {
-	const available_allocation_amount = flt(frm.doc.donation_amount) + flt(frm.doc.previous_balance_used);
+	const available_allocation_amount = get_sponsorship_purpose_amount(frm) + flt(frm.doc.previous_balance_used);
 	const unallocated_amount = available_allocation_amount - flt(allocated_amount);
 	if (flt(allocated_amount) <= 0) {
 		return "Unallocated";
@@ -733,6 +1083,12 @@ function get_allocation_status(frm, allocated_amount) {
 	}
 
 	return "Fully Allocated";
+}
+
+function get_sponsorship_purpose_amount(frm) {
+	return (frm.doc.purpose_details || [])
+		.filter((row) => row.donation_category === "Sponsorship")
+		.reduce((total, row) => total + flt(row.amount), 0);
 }
 
 function set_value_if_changed(frm, fieldname, value) {

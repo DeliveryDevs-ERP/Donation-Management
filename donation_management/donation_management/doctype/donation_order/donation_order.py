@@ -3,45 +3,50 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import cint, flt, getdate, now_datetime
+from frappe.utils import cint, flt, getdate, now_datetime, today
 
 from donation_management.donation_management.doctype.donor.donor import normalize_cnic, normalize_phone
 from donation_management.donation_management.api import (
 	account_matches_donation_type,
 	get_default_company,
+	get_default_cash_account,
 	get_donation_purpose_account_mapping,
 	get_mode_of_payment_account,
+	get_receiving_account_donation_type,
 )
 
 
 SPONSORSHIP_PURPOSE = "Sponsorship"
+PRISONER_PROGRAM_SUFFIX = " - Prisoner"
+ALLOWED_SPONSORSHIP_PURPOSES = (
+	"Sponsorship - Prisoner",
+	"Sponsorship - Student",
+	"Sponsorship - MTC",
+	"Sponsorship - Maktab",
+)
+SPONSORSHIP_DAYS_IN_MONTH = 30
+CHEQUE_MODE_OF_PAYMENT = "Cheque"
+BANK_DRAFT_MODE_OF_PAYMENT = "Bank Draft"
+DEPOSIT_ACCOUNT_MODES = ("Cheque", "Card Payment")
+PDC_STATUS_NOT_APPLICABLE = "Not Applicable"
+PDC_STATUS_PENDING = "Pending Deposit"
+PDC_STATUS_DEPOSITED = "Deposited"
 
 
-def ensure_donor_party_type():
-	if not frappe.db.exists("Party Type", "Donor"):
-		frappe.get_doc(
-			{"doctype": "Party Type", "party_type": "Donor", "account_type": "Receivable"}
-		).insert(ignore_permissions=True)
+def format_sponsorship_duration(total_days):
+	total_days = max(cint(total_days), 0)
+	months = total_days // SPONSORSHIP_DAYS_IN_MONTH
+	days = total_days % SPONSORSHIP_DAYS_IN_MONTH
+	parts = []
+	if months:
+		parts.append(frappe._("{0} month{1}").format(months, "" if months == 1 else "s"))
+	if days:
+		parts.append(frappe._("{0} day{1}").format(days, "" if days == 1 else "s"))
+	return " ".join(parts) or frappe._("0 days")
 
 
-def get_donor_receivable_account(company):
-	return (
-		frappe.db.get_value(
-			"Account",
-			{
-				"company": company,
-				"account_type": "Receivable",
-				"account_name": ["like", "%Donation%"],
-				"is_group": 0,
-			},
-			"name",
-		)
-		or frappe.db.get_value(
-			"Account",
-			{"company": company, "account_type": "Receivable", "is_group": 0},
-			"name",
-		)
-	)
+def is_prisoner_sponsorship_program(program_name):
+	return bool(program_name and str(program_name).endswith(PRISONER_PROGRAM_SUFFIX))
 
 
 class DonationOrder(Document):
@@ -52,26 +57,47 @@ class DonationOrder(Document):
 		self.set_company_defaults()
 		self.set_donor_details()
 		self.set_purpose_details()
-		self.validate_purpose()
 		self.set_previous_sponsorship_balance()
 		self.set_sponsorship_allocations()
 		self.validate_beneficiary()
 		self.set_total_donation()
 		self.set_accounting_details()
+		self.set_pdc_details()
 		self.validate_accounting_details()
 		self.validate_posted_accounting_locked()
 
 	def on_update(self):
-		self.sync_sponsorship_balance_ledger()
+		pass
+
+	def on_submit(self):
+		if self.is_pending_pdc():
+			self.accounting_status = "Not Posted"
+			return
 		self.create_journal_entry()
-		self.create_payment_entry()
+
+	def on_cancel(self):
+		self.cancel_linked_journal_entry()
 
 	def on_trash(self):
 		self.cancel_linked_journal_entry()
-		self.cancel_linked_payment_entry()
 
 	def is_sponsorship(self):
-		return self.purpose_of_donation == SPONSORSHIP_PURPOSE
+		return any(row.donation_category == SPONSORSHIP_PURPOSE for row in self.get("purpose_details", []))
+
+	def is_cheque_mode(self):
+		return self.mode_of_payment == CHEQUE_MODE_OF_PAYMENT
+
+	def is_bank_draft_mode(self):
+		return self.mode_of_payment == BANK_DRAFT_MODE_OF_PAYMENT
+
+	def is_deposit_account_mode(self):
+		return self.mode_of_payment in DEPOSIT_ACCOUNT_MODES
+
+	def is_manual_bank_mode(self):
+		return self.mode_of_payment_type == "Bank" and not self.is_deposit_account_mode()
+
+	def is_pending_pdc(self):
+		return self.is_cheque_mode() and cint(self.is_post_dated_cheque) and self.pdc_status == PDC_STATUS_PENDING
 
 	def set_company_defaults(self):
 		if not self.company:
@@ -147,6 +173,29 @@ class DonationOrder(Document):
 			self.name_on_donation_slip = donor.customer_name
 
 	def set_purpose_details(self):
+		self.add_legacy_purpose_row_if_needed()
+		if not self.purpose_details:
+			frappe.throw(frappe._("At least one Purpose Detail row is required."))
+
+		total_amount = 0
+		sponsorship_rows = []
+
+		for row in self.purpose_details:
+			self.set_purpose_detail_row(row)
+			total_amount += flt(row.amount)
+			if row.donation_category == SPONSORSHIP_PURPOSE:
+				sponsorship_rows.append(row)
+
+		self.donation_amount = total_amount
+
+		primary_row = sponsorship_rows[0] if sponsorship_rows else self.purpose_details[0]
+		self.donation_type = primary_row.donation_type
+		self.purpose_of_donation = primary_row.donation_category
+		self.donation_purpose = primary_row.donation_purpose
+		self.purpose_path = primary_row.purpose_path
+		self.credit_account = primary_row.credit_account
+		self.accounting_cost_center = primary_row.cost_center
+
 		if not self.donation_purpose:
 			self.requires_student = 0
 			self.requires_prisoner = 0
@@ -154,11 +203,76 @@ class DonationOrder(Document):
 			self.purpose_path = None
 			return
 
-		purpose = frappe.get_cached_doc("Donation Purpose", self.donation_purpose)
-		self.requires_student = purpose.requires_student
-		self.requires_prisoner = purpose.requires_prisoner
-		self.student_mode = purpose.student_mode
-		self.purpose_path = purpose.purpose_path
+		purposes = [
+			frappe.get_cached_doc("Donation Purpose", row.donation_purpose)
+			for row in (sponsorship_rows or [primary_row])
+		]
+		self.requires_student = 1 if any(cint(purpose.requires_student) for purpose in purposes) else 0
+		self.requires_prisoner = 1 if any(cint(purpose.requires_prisoner) for purpose in purposes) else 0
+		self.student_mode = purposes[0].student_mode
+
+	def add_legacy_purpose_row_if_needed(self):
+		if self.purpose_details or not (self.donation_type and self.purpose_of_donation and self.donation_purpose):
+			return
+
+		self.append(
+			"purpose_details",
+			{
+				"donation_type": self.donation_type,
+				"donation_category": self.purpose_of_donation,
+				"donation_purpose": self.donation_purpose,
+				"amount": flt(self.donation_amount),
+				"debit_account": self.debit_account,
+				"credit_account": self.credit_account,
+				"cost_center": self.accounting_cost_center,
+			},
+		)
+
+	def set_purpose_detail_row(self, row):
+		if not row.donation_type:
+			frappe.throw(frappe._("Type of Donation is required in Purpose Detail row {0}.").format(row.idx))
+		if not row.donation_category:
+			frappe.throw(frappe._("Donation Category is required in Purpose Detail row {0}.").format(row.idx))
+		if not row.donation_purpose:
+			frappe.throw(frappe._("Donation Purpose is required in Purpose Detail row {0}.").format(row.idx))
+		if flt(row.amount) <= 0:
+			frappe.throw(frappe._("Amount must be greater than zero in Purpose Detail row {0}.").format(row.idx))
+
+		purpose = frappe.get_cached_doc("Donation Purpose", row.donation_purpose)
+		if purpose.is_group:
+			frappe.throw(frappe._("Please select a leaf Donation Purpose in Purpose Detail row {0}.").format(row.idx))
+
+		if purpose.purpose_group != row.donation_category:
+			frappe.throw(
+				frappe._("Donation Purpose {0} belongs to {1}, not {2}, in row {3}.").format(
+					row.donation_purpose,
+					purpose.purpose_group,
+					row.donation_category,
+					row.idx,
+				)
+			)
+
+		if row.donation_category == SPONSORSHIP_PURPOSE and row.donation_purpose not in ALLOWED_SPONSORSHIP_PURPOSES:
+			frappe.throw(
+				frappe._(
+					"Only Sponsorship - Student, Sponsorship - Prisoner, Sponsorship - MTC, or Sponsorship - Maktab can be selected for Sponsorship in row {0}."
+				).format(row.idx)
+			)
+
+		row.purpose_path = purpose.purpose_path
+		mapping = get_donation_purpose_account_mapping(
+			self.company,
+			row.donation_type,
+			row.donation_purpose,
+		)
+		row.credit_account = mapping.get("credit_account")
+		row.cost_center = mapping.get("cost_center")
+		if not row.credit_account:
+			frappe.throw(
+				frappe._(
+					"Credit Account mapping is required for Donation Purpose {0} and Donation Type {1} in row {2}."
+				).format(row.donation_purpose, row.donation_type, row.idx)
+			)
 
 	def validate_purpose(self):
 		if not self.donation_purpose:
@@ -200,13 +314,16 @@ class DonationOrder(Document):
 	def set_sponsorship_allocations(self):
 		if not self.is_sponsorship():
 			self.sponsorship_students = []
-			self.sponsorship_prisoners = []
 			self.previous_sponsorship_balance = 0
 			self.previous_balance_used = 0
+			self.sponsorship_amount = 0
 			self.available_allocation_amount = 0
 			self.allocated_amount = 0
 			self.unallocated_amount = 0
+			self.total_program_amount = 0
+			self.remaining_program_cost = 0
 			self.allocation_status = None
+			self.sponsored_student_count = 0
 			self.total_sponsored_beneficiaries = 0
 			self.total_covered_months = 0
 			return
@@ -215,37 +332,21 @@ class DonationOrder(Document):
 			self.reset_sponsorship_summary()
 			return
 
-		if not self.requires_student and not self.requires_prisoner:
-			self.sponsorship_students = []
-			self.sponsorship_prisoners = []
-			self.reset_sponsorship_summary()
-			return
-
-		if self.requires_student:
-			self.sponsorship_prisoners = []
-			if not self.sponsorship_students:
-				frappe.throw(frappe._("At least one Sponsorship Student row is required."))
-			self.validate_unique_sponsorship_students()
-
-		if self.requires_prisoner:
-			self.sponsorship_students = []
-			if not self.sponsorship_prisoners:
-				frappe.throw(frappe._("At least one Sponsorship Prisoner row is required."))
+		if not self.sponsorship_students:
+			frappe.throw(frappe._("At least one Sponsorship Allocation row is required."))
 
 		allocated_amount = 0
+		total_program_amount = 0
 		total_sponsored_beneficiaries = 0
 		total_covered_months = 0
+		program_modes = self.get_sponsorship_program_modes()
 
 		for row in self.sponsorship_students:
-			self.set_sponsorship_student_row(row)
+			self.set_sponsorship_allocation_row(row, program_modes)
 			allocated_amount += flt(row.allocated_amount)
-			total_sponsored_beneficiaries += 1
-			total_covered_months += flt(row.covered_months)
-
-		for row in self.sponsorship_prisoners:
-			self.set_sponsorship_prisoner_row(row)
-			allocated_amount += flt(row.allocated_amount)
-			total_sponsored_beneficiaries += cint(row.quantity)
+			total_program_amount += flt(row.total_program_donation)
+			quantity = cint(row.quantity)
+			total_sponsored_beneficiaries += quantity
 			total_covered_months += flt(row.covered_months)
 
 		if allocated_amount > flt(self.available_allocation_amount):
@@ -258,7 +359,11 @@ class DonationOrder(Document):
 
 		self.allocated_amount = allocated_amount
 		self.unallocated_amount = flt(self.available_allocation_amount) - allocated_amount
+		self.sponsorship_amount = flt(self.get_sponsorship_purpose_amount())
+		self.total_program_amount = total_program_amount
+		self.remaining_program_cost = max(total_program_amount - allocated_amount, 0)
 		self.set_allocation_status()
+		self.sponsored_student_count = total_sponsored_beneficiaries
 		self.total_sponsored_beneficiaries = total_sponsored_beneficiaries
 		self.total_covered_months = total_covered_months
 
@@ -272,12 +377,19 @@ class DonationOrder(Document):
 		if not self.donor_name:
 			self.previous_sponsorship_balance = 0
 			self.previous_balance_used = 0
-			self.available_allocation_amount = flt(self.donation_amount)
+			self.available_allocation_amount = flt(self.get_sponsorship_purpose_amount())
 			return
 
 		self.previous_sponsorship_balance = self.get_donor_previous_sponsorship_balance()
 		self.previous_balance_used = self.previous_sponsorship_balance
-		self.available_allocation_amount = flt(self.donation_amount) + flt(self.previous_balance_used)
+		self.available_allocation_amount = flt(self.get_sponsorship_purpose_amount()) + flt(self.previous_balance_used)
+
+	def get_sponsorship_purpose_amount(self):
+		return sum(
+			flt(row.amount)
+			for row in self.get("purpose_details", [])
+			if row.donation_category == SPONSORSHIP_PURPOSE
+		)
 
 	def get_donor_previous_sponsorship_balance(self):
 		filters = {
@@ -286,6 +398,8 @@ class DonationOrder(Document):
 			"name": ["!=", self.name],
 			"docstatus": ["!=", 2],
 		}
+		if self.donation_type:
+			filters["donation_type"] = self.donation_type
 		if not self.is_new() and self.creation:
 			filters["creation"] = ["<", self.creation]
 
@@ -301,27 +415,15 @@ class DonationOrder(Document):
 		)
 		return max(flt(donation_amount) - flt(allocated_amount), 0)
 
-	def validate_unique_sponsorship_students(self):
-		selected_students = {}
-		for row in self.sponsorship_students:
-			if not row.student:
-				continue
-
-			if row.student in selected_students:
-				frappe.throw(
-					frappe._("Student {0} is already selected in row {1}.").format(
-						row.student,
-						selected_students[row.student],
-					)
-				)
-
-			selected_students[row.student] = row.idx
-
 	def reset_sponsorship_summary(self):
-		self.available_allocation_amount = flt(self.donation_amount) + flt(self.previous_balance_used)
+		self.sponsorship_amount = flt(self.get_sponsorship_purpose_amount()) if self.is_sponsorship() else 0
+		self.available_allocation_amount = flt(self.get_sponsorship_purpose_amount()) + flt(self.previous_balance_used)
 		self.allocated_amount = 0
 		self.unallocated_amount = self.available_allocation_amount if self.is_sponsorship() else 0
+		self.total_program_amount = 0
+		self.remaining_program_cost = 0
 		self.allocation_status = "Unallocated" if self.is_sponsorship() else None
+		self.sponsored_student_count = 0
 		self.total_sponsored_beneficiaries = 0
 		self.total_covered_months = 0
 
@@ -337,22 +439,44 @@ class DonationOrder(Document):
 		else:
 			self.allocation_status = "Fully Allocated"
 
-	def set_sponsorship_student_row(self, row):
-		if not row.student:
-			frappe.throw(frappe._("Student is required in Sponsorship Student rows."))
+	def get_sponsorship_program_modes(self):
+		modes = {
+			"student": False,
+			"prisoner": False,
+		}
+		for row in self.get("purpose_details", []):
+			if row.donation_category != SPONSORSHIP_PURPOSE:
+				continue
+			if row.donation_purpose == "Sponsorship - Prisoner":
+				modes["prisoner"] = True
+			else:
+				modes["student"] = True
+		return modes
 
-		row.quantity = 1
-		self.set_sponsorship_row_program_details(row, quantity=1, row_label="Sponsorship Student")
-
-	def set_sponsorship_prisoner_row(self, row):
+	def set_sponsorship_allocation_row(self, row, program_modes):
 		if cint(row.quantity) <= 0:
-			frappe.throw(frappe._("Quantity must be greater than zero in Sponsorship Prisoners."))
+			frappe.throw(frappe._("Quantity must be greater than zero in Sponsorship Allocation rows."))
+		if not row.sponsorship_program:
+			frappe.throw(frappe._("Sponsorship Program is required in Sponsorship Allocation rows."))
 
-		row.student = None
+		is_prisoner_program = is_prisoner_sponsorship_program(row.sponsorship_program)
+		if is_prisoner_program and not program_modes["prisoner"]:
+			frappe.throw(
+				frappe._("Prisoner program {0} requires Sponsorship - Prisoner in Purpose Details.").format(
+					row.sponsorship_program
+				)
+			)
+		if not is_prisoner_program and not program_modes["student"]:
+			frappe.throw(
+				frappe._("Student program {0} requires a non-prisoner Sponsorship purpose in Purpose Details.").format(
+					row.sponsorship_program
+				)
+			)
+
 		self.set_sponsorship_row_program_details(
 			row,
 			quantity=cint(row.quantity),
-			row_label="Sponsorship Prisoner",
+			row_label="Sponsorship Allocation",
 		)
 
 	def set_sponsorship_row_program_details(self, row, quantity, row_label):
@@ -373,96 +497,19 @@ class DonationOrder(Document):
 			)
 
 		monthly_total = flt(row.monthly_donation) * quantity
-		row.covered_months = min(flt(row.allocated_amount) / monthly_total, flt(row.duration_months))
-		row.remaining_months = max(flt(row.duration_months) - flt(row.covered_months), 0)
+		total_days = cint(row.duration_months) * SPONSORSHIP_DAYS_IN_MONTH
+		covered_days = 0
+		if monthly_total:
+			covered_days = min(
+				cint(round((flt(row.allocated_amount) / monthly_total) * SPONSORSHIP_DAYS_IN_MONTH)),
+				total_days,
+			)
+		remaining_days = max(total_days - covered_days, 0)
+		row.covered_months = covered_days / SPONSORSHIP_DAYS_IN_MONTH
+		row.remaining_months = remaining_days / SPONSORSHIP_DAYS_IN_MONTH
+		row.covered_duration = format_sponsorship_duration(covered_days)
+		row.remaining_duration = format_sponsorship_duration(remaining_days)
 		row.remaining_amount = max(flt(row.total_program_donation) - flt(row.allocated_amount), 0)
-
-	def sync_sponsorship_balance_ledger(self):
-		if not frappe.db.table_exists("Sponsorship Balance Ledger"):
-			return
-
-		frappe.db.delete("Sponsorship Balance Ledger", {"donation_order": self.name})
-		if not self.is_sponsorship():
-			return
-
-		balance = flt(self.donation_amount) + flt(self.previous_balance_used)
-		self.create_sponsorship_ledger_entry(
-			entry_type="Donation Received",
-			amount_in=flt(self.donation_amount),
-			amount_allocated=0,
-			balance_after_entry=flt(self.donation_amount),
-		)
-
-		if flt(self.previous_balance_used) > 0:
-			self.create_sponsorship_ledger_entry(
-				entry_type="Previous Balance Used",
-				amount_in=flt(self.previous_balance_used),
-				amount_allocated=0,
-				balance_after_entry=balance,
-			)
-
-		for row in self.sponsorship_students:
-			if flt(row.allocated_amount) <= 0:
-				continue
-
-			balance -= flt(row.allocated_amount)
-			self.create_sponsorship_ledger_entry(
-				entry_type="Student Allocation",
-				amount_in=0,
-				amount_allocated=flt(row.allocated_amount),
-				balance_after_entry=balance,
-				beneficiary_type="Student",
-				student=row.student,
-				quantity=1,
-				sponsorship_program=row.sponsorship_program,
-				allocation_row_name=row.name,
-			)
-
-		for row in self.sponsorship_prisoners:
-			if flt(row.allocated_amount) <= 0:
-				continue
-
-			balance -= flt(row.allocated_amount)
-			self.create_sponsorship_ledger_entry(
-				entry_type="Prisoner Allocation",
-				amount_in=0,
-				amount_allocated=flt(row.allocated_amount),
-				balance_after_entry=balance,
-				beneficiary_type="Prisoner",
-				quantity=cint(row.quantity),
-				sponsorship_program=row.sponsorship_program,
-				allocation_row_name=row.name,
-			)
-
-	def create_sponsorship_ledger_entry(
-		self,
-		entry_type,
-		amount_in,
-		amount_allocated,
-		balance_after_entry,
-		beneficiary_type=None,
-		student=None,
-		quantity=None,
-		sponsorship_program=None,
-		allocation_row_name=None,
-	):
-		frappe.get_doc(
-			{
-				"doctype": "Sponsorship Balance Ledger",
-				"donor": self.donor_name,
-				"donation_order": self.name,
-				"posting_datetime": now_datetime(),
-				"entry_type": entry_type,
-				"amount_in": amount_in,
-				"amount_allocated": amount_allocated,
-				"balance_after_entry": balance_after_entry,
-				"beneficiary_type": beneficiary_type,
-				"student": student,
-				"quantity": quantity,
-				"sponsorship_program": sponsorship_program,
-				"allocation_row_name": allocation_row_name,
-			}
-		).insert(ignore_permissions=True)
 
 	def set_total_donation(self):
 		if self.is_sponsorship():
@@ -490,31 +537,67 @@ class DonationOrder(Document):
 		if self.mode_of_payment and self.company:
 			mode_details = get_mode_of_payment_account(self.company, self.mode_of_payment, self.donation_type)
 			self.mode_of_payment_type = mode_details.get("mode_of_payment_type")
-			if self.mode_of_payment_type == "Bank":
-				if not self.bank_account:
-					self.bank_account = mode_details.get("debit_account")
-				self.debit_account = self.bank_account
-			else:
+			if self.mode_of_payment_type == "Cash":
 				self.bank_account = None
-				if not self.debit_account:
+				if not self.debit_account or frappe.db.get_value("Account", self.debit_account, "account_type") != "Cash":
+					self.debit_account = get_default_cash_account(
+						self.company,
+						self.mode_of_payment,
+					)
+				for row in self.purpose_details:
+					row.debit_account = self.debit_account
+			elif self.is_deposit_account_mode():
+				if not self.bank_account:
+					self.bank_account = self.debit_account or self.get_first_purpose_debit_account()
+				self.debit_account = self.bank_account
+				for row in self.purpose_details:
+					row.debit_account = self.bank_account
+			elif self.is_bank_draft_mode():
+				self.bank_account = None
+				for row in self.purpose_details:
+					if not row.debit_account:
+						row_mode_details = get_mode_of_payment_account(
+							self.company,
+							self.mode_of_payment,
+							row.donation_type,
+						)
+						row.debit_account = row_mode_details.get("debit_account")
+				self.debit_account = self.get_first_purpose_debit_account()
+			elif self.is_manual_bank_mode():
+				self.bank_account = None
+				if not self.debit_account or frappe.db.get_value("Account", self.debit_account, "account_type") != "Bank":
 					self.debit_account = mode_details.get("debit_account")
+				for row in self.purpose_details:
+					row.debit_account = self.debit_account
+			else:
+				if self.mode_of_payment_type != "Bank":
+					self.bank_account = None
+				for row in self.purpose_details:
+					if not row.debit_account:
+						row_mode_details = get_mode_of_payment_account(
+							self.company,
+							self.mode_of_payment,
+							row.donation_type,
+						)
+						row.debit_account = row_mode_details.get("debit_account")
+				if not self.debit_account:
+					self.debit_account = self.get_first_purpose_debit_account() or mode_details.get("debit_account")
+				if self.mode_of_payment_type == "Bank" and not self.bank_account:
+					self.bank_account = self.debit_account
 		else:
 			self.mode_of_payment_type = None
 			self.bank_account = None
 
-		if self.donation_purpose and self.donation_type and self.company:
+		for row in self.purpose_details:
+			if row.credit_account:
+				continue
 			mapping = get_donation_purpose_account_mapping(
 				self.company,
-				self.donation_type,
-				self.donation_purpose,
+				row.donation_type,
+				row.donation_purpose,
 			)
-			if not self.credit_account:
-				self.credit_account = mapping.get("credit_account")
-			if not self.accounting_cost_center:
-				self.accounting_cost_center = mapping.get("cost_center")
-		else:
-			if not self.credit_account:
-				self.credit_account = None
+			row.credit_account = mapping.get("credit_account")
+			row.cost_center = mapping.get("cost_center")
 
 	def validate_accounting_details(self):
 		if flt(self.donation_amount) <= 0:
@@ -526,40 +609,142 @@ class DonationOrder(Document):
 		if not self.mode_of_payment:
 			frappe.throw(frappe._("Mode of Payment is required for accounting."))
 
-		if not self.debit_account:
-			frappe.throw(frappe._("Debit Account is required for accounting."))
+		if self.mode_of_payment_type == "Cash":
+			if not self.debit_account:
+				frappe.throw(frappe._("Debit Account is required for accounting."))
+			self.validate_account(self.debit_account, "Debit Account")
+		elif self.is_deposit_account_mode():
+			if not self.bank_account:
+				frappe.throw(frappe._("Deposit Account is required for Mode of Payment {0}.").format(self.mode_of_payment))
+			if self.debit_account != self.bank_account:
+				frappe.throw(frappe._("Debit Account must match the selected Deposit Account."))
+			self.validate_account(self.bank_account, "Deposit Account", allowed_account_types=("Bank",))
+		elif self.is_manual_bank_mode() and not self.is_bank_draft_mode():
+			if not self.debit_account:
+				frappe.throw(frappe._("Debit Account is required for Mode of Payment {0}.").format(self.mode_of_payment))
+			self.validate_account(self.debit_account, "Debit Account", allowed_account_types=("Bank",))
+		elif not self.get_first_purpose_debit_account():
+			frappe.throw(frappe._("Debit Account is required in each Purpose Detail row for non-cash payments."))
 
-		if not self.credit_account:
-			frappe.throw(
-				frappe._(
-					"Credit Account mapping is required for Donation Purpose {0} and Donation Type {1}."
-				).format(self.donation_purpose, self.donation_type)
+		for row in self.purpose_details:
+			if not row.debit_account:
+				frappe.throw(
+					frappe._("Debit Account is required in Purpose Detail row {0}.").format(row.idx)
+				)
+
+			if self.mode_of_payment_type == "Cash":
+				if row.debit_account != self.debit_account:
+					frappe.throw(
+						frappe._("Debit Account in Purpose Detail row {0} must match the Cash Debit Account.").format(
+							row.idx
+						)
+					)
+			else:
+				if not row.debit_account:
+					frappe.throw(
+						frappe._("Debit Account is required in Purpose Detail row {0} for non-cash payments.").format(
+							row.idx
+						)
+					)
+				self.validate_account(row.debit_account, "Debit Account", allowed_account_types=self.get_allowed_debit_account_types())
+				if self.is_deposit_account_mode() and row.debit_account != self.bank_account:
+					frappe.throw(
+						frappe._("Debit Account in Purpose Detail row {0} must match the selected Deposit Account.").format(
+							row.idx
+						)
+					)
+				if self.is_manual_bank_mode() and not self.is_bank_draft_mode() and row.debit_account != self.debit_account:
+					frappe.throw(
+						frappe._("Debit Account in Purpose Detail row {0} must match the selected Debit Account.").format(
+							row.idx
+						)
+					)
+				if self.is_bank_draft_mode():
+					self.validate_bank_draft_debit_account(row.debit_account, row.donation_type, row.idx)
+
+			if not row.credit_account:
+				frappe.throw(
+					frappe._(
+						"Credit Account mapping is required for Donation Purpose {0} and Donation Type {1} in row {2}."
+					).format(row.donation_purpose, row.donation_type, row.idx)
+				)
+			self.validate_account(
+				row.credit_account,
+				"Credit Account",
+				allowed_root_types=("Income", "Liability", "Equity"),
 			)
 
-		self.validate_account(self.debit_account, "Debit Account")
-		self.validate_account(
-			self.credit_account,
-			"Credit Account",
-			allowed_root_types=("Income", "Liability", "Equity"),
-		)
-
-		if self.mode_of_payment_type in ("Cash", "Bank"):
+		if self.mode_of_payment_type == "Cash":
 			account_type = frappe.db.get_value("Account", self.debit_account, "account_type")
-			if account_type != self.mode_of_payment_type:
+			if account_type != "Cash":
 				frappe.throw(
 					frappe._("Debit Account must be a {0} account for Mode of Payment {1}.").format(
-						self.mode_of_payment_type,
+						"Cash",
 						self.mode_of_payment,
 					)
 				)
 
-		if self.mode_of_payment_type == "Bank" and self.donation_type:
-			if not account_matches_donation_type(self.debit_account, self.donation_type):
-				frappe.throw(
-					frappe._("Debit Account must contain {0} for Bank donations of type {0}.").format(
-						self.donation_type
-					)
+	def validate_bank_draft_debit_account(self, debit_account, donation_type, row_idx=None):
+		if not self.is_bank_draft_mode() or not debit_account or not donation_type:
+			return
+
+		if account_matches_donation_type(debit_account, donation_type):
+			return
+
+		expected_account_word = get_receiving_account_donation_type(donation_type)
+		if row_idx:
+			frappe.throw(
+				frappe._("Debit Account in Purpose Detail row {0} must contain {1} for Donation Type {2}.").format(
+					row_idx,
+					expected_account_word,
+					donation_type,
 				)
+			)
+
+		frappe.throw(
+			frappe._("Debit Account must contain {0} for Donation Type {1}.").format(
+				expected_account_word,
+				donation_type,
+			)
+		)
+
+	def set_pdc_details(self):
+		if not self.is_cheque_mode():
+			self.is_post_dated_cheque = 0
+			self.cheque_number = None
+			self.cheque_deposit_date = None
+			self.pdc_status = PDC_STATUS_NOT_APPLICABLE
+			self.pdc_posted_on = None
+			return
+
+		if not self.cheque_number:
+			frappe.throw(frappe._("Cheque Number is required for Cheque donations."))
+
+		if not cint(self.is_post_dated_cheque):
+			frappe.throw(frappe._("Post-Dated Cheque must be checked when Mode of Payment is Cheque."))
+
+		if not self.cheque_deposit_date:
+			frappe.throw(frappe._("Cheque Deposit Date is required for Cheque donations."))
+
+		if self.journal_entry or self.pdc_status == PDC_STATUS_DEPOSITED:
+			self.pdc_status = PDC_STATUS_DEPOSITED
+			return
+
+		self.pdc_status = PDC_STATUS_PENDING
+		self.accounting_status = "Not Posted"
+
+	def get_allowed_debit_account_types(self):
+		if self.mode_of_payment_type == "Cash":
+			return ("Cash",)
+		if self.is_deposit_account_mode() or self.mode_of_payment_type == "Bank":
+			return ("Bank",)
+		return None
+
+	def get_first_purpose_debit_account(self):
+		for row in self.get("purpose_details", []):
+			if row.debit_account:
+				return row.debit_account
+		return None
 
 	def validate_account(self, account, label, allowed_account_types=None, allowed_root_types=None):
 		account_details = frappe.db.get_value(
@@ -613,6 +798,10 @@ class DonationOrder(Document):
 			"mode_of_payment",
 			"bank_account",
 			"debit_account",
+			"is_post_dated_cheque",
+			"cheque_number",
+			"cheque_deposit_date",
+			"pdc_status",
 			"donation_type",
 			"donation_purpose",
 			"credit_account",
@@ -627,7 +816,34 @@ class DonationOrder(Document):
 					)
 				)
 
-	def create_journal_entry(self):
+		if self.get_purpose_signature(old_doc) != self.get_purpose_signature(self):
+			frappe.throw(
+				frappe._("Cannot change Purpose Details after Journal Entry {0} has been posted.").format(
+					old_doc.journal_entry
+				)
+			)
+
+	def get_purpose_signature(self, doc):
+		return [
+			(
+				row.donation_type,
+				row.donation_category,
+				row.donation_purpose,
+				flt(row.amount),
+				row.debit_account,
+				row.credit_account,
+				row.cost_center,
+			)
+			for row in doc.get("purpose_details", [])
+		]
+
+	def create_journal_entry(self, force_pdc=False):
+		if self.docstatus != 1:
+			return
+
+		if self.is_pending_pdc() and not force_pdc:
+			return
+
 		if self.journal_entry and frappe.db.exists("Journal Entry", self.journal_entry):
 			self.set_accounting_status_from_journal_entry()
 			return
@@ -645,11 +861,42 @@ class DonationOrder(Document):
 			self.set_accounting_fields(existing_journal_entry, "Posted")
 			return
 
-		cost_center = self.accounting_cost_center or frappe.db.get_value(
+		default_cost_center = self.accounting_cost_center or frappe.db.get_value(
 			"Company",
 			self.company,
 			"cost_center",
 		)
+		accounts = []
+		if self.mode_of_payment_type == "Cash":
+			accounts.append(
+				self.get_journal_entry_account_row(
+					account=self.debit_account,
+					debit=flt(self.donation_amount),
+					credit=0,
+					cost_center=default_cost_center,
+				)
+			)
+		else:
+			for row in self.purpose_details:
+				accounts.append(
+					self.get_journal_entry_account_row(
+						account=row.debit_account,
+						debit=flt(row.amount),
+						credit=0,
+						cost_center=row.cost_center or default_cost_center,
+					)
+				)
+
+		for row in self.purpose_details:
+			accounts.append(
+				self.get_journal_entry_account_row(
+					account=row.credit_account,
+					debit=0,
+					credit=flt(row.amount),
+					cost_center=row.cost_center or default_cost_center,
+				)
+			)
+
 		entry = frappe.get_doc(
 			{
 				"doctype": "Journal Entry",
@@ -658,20 +905,7 @@ class DonationOrder(Document):
 				"posting_date": getdate(self.donation_posting_date),
 				"pay_to_recd_from": self.get_journal_entry_received_from(),
 				"user_remark": self.get_journal_entry_user_remark(),
-				"accounts": [
-					self.get_journal_entry_account_row(
-						account=self.debit_account,
-						debit=flt(self.donation_amount),
-						credit=0,
-						cost_center=cost_center,
-					),
-					self.get_journal_entry_account_row(
-						account=self.credit_account,
-						debit=0,
-						credit=flt(self.donation_amount),
-						cost_center=cost_center,
-					),
-				],
+				"accounts": accounts,
 			}
 		)
 		entry.insert(ignore_permissions=True)
@@ -737,70 +971,6 @@ class DonationOrder(Document):
 			entry.cancel()
 			self.accounting_status = "Cancelled"
 
-	def create_payment_entry(self):
-		if self.payment_entry and frappe.db.exists("Payment Entry", self.payment_entry):
-			return
-
-		existing = frappe.db.get_value(
-			"Payment Entry",
-			{"reference_no": self.name, "docstatus": ["!=", 2]},
-			"name",
-		)
-		if existing:
-			frappe.db.set_value(self.doctype, self.name, "payment_entry", existing, update_modified=False)
-			self.payment_entry = existing
-			return
-
-		try:
-			ensure_donor_party_type()
-			paid_from = get_donor_receivable_account(self.company)
-			if not paid_from:
-				frappe.log_error(
-					"No receivable account found for company {0}; skipping Payment Entry for Donation Order {1}.".format(
-						self.company, self.name
-					),
-					"Donation Order Payment Entry",
-				)
-				return
-
-			donor_display_name = frappe.db.get_value("Donor", self.donor_name, "customer_name") or self.donor_name
-			pe = frappe.get_doc(
-				{
-					"doctype": "Payment Entry",
-					"payment_type": "Receive",
-					"party_type": "Donor",
-					"party": self.donor_name,
-					"party_name": donor_display_name,
-					"company": self.company,
-					"posting_date": getdate(self.donation_posting_date),
-					"mode_of_payment": self.mode_of_payment,
-					"paid_from": paid_from,
-					"paid_from_account_currency": self.currency,
-					"paid_to": self.debit_account,
-					"paid_to_account_currency": self.currency,
-					"paid_amount": flt(self.donation_amount),
-					"received_amount": flt(self.donation_amount),
-					"reference_no": self.name,
-					"reference_date": getdate(self.donation_posting_date),
-					"remarks": "Donation Order: {0} | Donor: {1}".format(self.name, self.donor_name),
-				}
-			)
-			pe.insert(ignore_permissions=True)
-			frappe.db.set_value(self.doctype, self.name, "payment_entry", pe.name, update_modified=False)
-			self.payment_entry = pe.name
-		except Exception:
-			frappe.log_error(frappe.get_traceback(), "Donation Order Payment Entry Creation Failed")
-
-	def cancel_linked_payment_entry(self):
-		if not self.payment_entry or not frappe.db.exists("Payment Entry", self.payment_entry):
-			return
-
-		entry = frappe.get_doc("Payment Entry", self.payment_entry)
-		if entry.docstatus == 1:
-			entry.cancel()
-		elif entry.docstatus == 0:
-			entry.delete()
-
 	def set_gl_entry_party(self, journal_entry):
 		# ERPNext blocks party fields on Bank/Income Journal Entry rows, but JTQ needs
 		# donor-wise General Ledger reporting. Set party on generated GL rows only.
@@ -815,3 +985,48 @@ class DonationOrder(Document):
 			""",
 			("Donor", self.donor_name, journal_entry),
 		)
+
+
+@frappe.whitelist()
+def create_pdc_journal_entry(donation_order):
+	doc = frappe.get_doc("Donation Order", donation_order)
+	doc.check_permission("write")
+
+	if not doc.is_cheque_mode() or not cint(doc.is_post_dated_cheque):
+		frappe.throw(frappe._("Create Journal Entry is only available for post-dated cheque Donation Orders."))
+
+	if doc.docstatus != 1:
+		frappe.throw(frappe._("Donation Order must be submitted before creating Journal Entry."))
+
+	if doc.pdc_status != PDC_STATUS_PENDING:
+		frappe.throw(frappe._("Only pending PDC Donation Orders can be deposited."))
+
+	if doc.journal_entry:
+		frappe.throw(frappe._("Journal Entry already exists for this Donation Order."))
+
+	if getdate(doc.cheque_deposit_date) > getdate(today()):
+		frappe.throw(
+			frappe._("Cheque can only be deposited on or after {0}.").format(
+				frappe.format_value(doc.cheque_deposit_date, {"fieldtype": "Date"})
+			)
+		)
+
+	doc.create_journal_entry(force_pdc=True)
+	if not doc.journal_entry:
+		frappe.throw(frappe._("Journal Entry could not be created for this Donation Order."))
+
+	frappe.db.set_value(
+		doc.doctype,
+		doc.name,
+		{
+			"pdc_status": PDC_STATUS_DEPOSITED,
+			"pdc_posted_on": now_datetime(),
+		},
+		update_modified=False,
+	)
+	doc.pdc_status = PDC_STATUS_DEPOSITED
+	doc.pdc_posted_on = now_datetime()
+
+	return {
+		"journal_entry": doc.journal_entry,
+	}
