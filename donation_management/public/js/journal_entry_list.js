@@ -22,9 +22,24 @@ frappe.listview_settings["Journal Entry"] = {
 
 function hide_cancelled_journal_entries(listview) {
 	const cancelled_filter = ["Journal Entry", "docstatus", "!=", 2];
-	if (listview.filter_area.get().some((filter) => JSON.stringify(filter) === JSON.stringify(cancelled_filter))) {
+	if (
+		listview.__hide_cancelled_journal_entries_applied ||
+		listview.filter_area.get().some(is_cancelled_journal_entry_filter)
+	) {
+		listview.__hide_cancelled_journal_entries_applied = true;
 		return;
 	}
 
 	listview.filter_area.add([cancelled_filter]);
+	listview.__hide_cancelled_journal_entries_applied = true;
+}
+
+function is_cancelled_journal_entry_filter(filter) {
+	return (
+		Array.isArray(filter) &&
+		filter[0] === "Journal Entry" &&
+		filter[1] === "docstatus" &&
+		filter[2] === "!=" &&
+		Number(filter[3]) === 2
+	);
 }

@@ -4,6 +4,7 @@
 import re
 
 import frappe
+from frappe.utils import cint
 from frappe.utils.nestedset import NestedSet
 
 
@@ -196,7 +197,8 @@ def _get_donor_nodes(filters):
 		{
 			"value": f"{DONOR_NODE_PREFIX}{donor.name}",
 			"title": donor.customer_name or donor.name,
-			"expandable": _donor_has_children(donor.name),
+			"expandable": cint(donor.is_group) or _donor_has_children(donor.name),
+			"is_group": cint(donor.is_group),
 			"reference_doctype": "Donor",
 			"reference_name": donor.name,
 		}
@@ -242,7 +244,7 @@ def _get_referred_donor_nodes(trustee):
 	donors = frappe.get_list(
 		"Donor",
 		filters={"referred_by_trustee": trustee},
-		fields=["name", "customer_name"],
+		fields=["name", "customer_name", "is_group"],
 		order_by="customer_name asc, name asc",
 	)
 
@@ -250,7 +252,8 @@ def _get_referred_donor_nodes(trustee):
 		{
 			"value": f"{DONOR_NODE_PREFIX}{donor.name}",
 			"title": donor.customer_name or donor.name,
-			"expandable": False,
+			"expandable": cint(donor.is_group) or _donor_has_children(donor.name),
+			"is_group": cint(donor.is_group),
 			"reference_doctype": "Donor",
 			"reference_name": donor.name,
 		}
