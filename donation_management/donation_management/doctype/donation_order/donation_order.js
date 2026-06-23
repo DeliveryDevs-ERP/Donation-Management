@@ -373,6 +373,14 @@ function set_donor_from_cnic(frm) {
 }
 
 function update_accounting_fields(frm, overwrite_debit_account = false) {
+	const request_key = get_accounting_request_key({
+		company: frm.doc.company,
+		donation_type: frm.doc.donation_type,
+		donation_purpose: frm.doc.donation_purpose,
+		mode_of_payment: frm.doc.mode_of_payment,
+	});
+	frm.__last_accounting_request_key = request_key;
+
 	frappe.call({
 		method: "donation_management.donation_management.api.get_donation_order_accounting_details",
 		args: {
@@ -382,6 +390,10 @@ function update_accounting_fields(frm, overwrite_debit_account = false) {
 			mode_of_payment: frm.doc.mode_of_payment,
 		},
 		callback(response) {
+			if (frm.__last_accounting_request_key !== request_key) {
+				return;
+			}
+
 			const details = response.message || {};
 			if (!frm.doc.company && details.company) {
 				set_value_if_changed(frm, "company", details.company);
@@ -439,7 +451,7 @@ function add_donation_order_action_buttons(frm) {
 	}, action_group);
 
 	if (can_create_pdc_journal_entry(frm)) {
-		frm.add_custom_button(__("Create Journal Entry"), () => {
+		frm.add_custom_button(__("Create Payment Entry"), () => {
 			create_pdc_journal_entry(frm);
 		}, action_group);
 	}
@@ -457,17 +469,26 @@ function can_create_pdc_journal_entry(frm) {
 }
 
 function create_pdc_journal_entry(frm) {
+	if (frm.doc.cheque_deposit_date && frm.doc.cheque_deposit_date > frappe.datetime.get_today()) {
+		frappe.msgprint(
+			__("Payment Entry can only be created on or after {0}.", [
+				frappe.datetime.str_to_user(frm.doc.cheque_deposit_date),
+			])
+		);
+		return;
+	}
+
 	frappe.call({
 		method: "donation_management.donation_management.doctype.donation_order.donation_order.create_pdc_journal_entry",
 		args: {
 			donation_order: frm.doc.name,
 		},
 		freeze: true,
-		freeze_message: __("Creating Journal Entry..."),
+		freeze_message: __("Creating Payment Entry..."),
 		callback(response) {
 			const result = response.message || {};
 			frappe.msgprint(
-				__("Journal Entry {0} created.", [
+				__("Payment Entry created. Journal Entry {0} posted.", [
 					result.journal_entry || "",
 				])
 			);
@@ -532,7 +553,7 @@ function toggle_parent_debit_account(frm) {
 	const deposit_account_mode = is_deposit_account_mode(frm);
 
 	frm.toggle_display("debit_account", cash_mode || (manual_bank_mode && !bank_draft_mode) || deposit_account_mode);
-	frm.set_df_property("debit_account", "read_only", deposit_account_mode ? 1 : 0);
+	frm.set_df_property("debit_account", "read_only", cash_mode || deposit_account_mode ? 1 : 0);
 	frm.toggle_reqd("debit_account", cash_mode || (manual_bank_mode && !bank_draft_mode));
 }
 
@@ -580,6 +601,9 @@ function update_purpose_row_details(frm, cdt, cdn) {
 		return;
 	}
 
+	const purpose_request_key = get_purpose_row_request_key(frm, row);
+	row.__last_purpose_request_key = purpose_request_key;
+
 	frappe.db
 		.get_value("Donation Purpose", row.donation_purpose, [
 			"purpose_path",
@@ -589,6 +613,11 @@ function update_purpose_row_details(frm, cdt, cdn) {
 			"student_mode",
 		])
 		.then((purpose_response) => {
+			const current_row = locals[cdt]?.[cdn];
+			if (!current_row || current_row.__last_purpose_request_key !== purpose_request_key) {
+				return;
+			}
+
 			const purpose = purpose_response.message || {};
 			if (purpose.purpose_group && row.donation_category && purpose.purpose_group !== row.donation_category) {
 				frappe.msgprint(
@@ -616,6 +645,11 @@ function update_purpose_row_details(frm, cdt, cdn) {
 					mode_of_payment: frm.doc.mode_of_payment,
 				},
 				callback(response) {
+					const latest_row = locals[cdt]?.[cdn];
+					if (!latest_row || latest_row.__last_purpose_request_key !== purpose_request_key) {
+						return;
+					}
+
 					const details = response.message || {};
 					if (details.mode_of_payment_type === "Cash") {
 						set_child_value_if_changed(cdt, cdn, "debit_account", details.debit_account || "");
@@ -1057,6 +1091,24 @@ function format_sponsorship_duration(total_days) {
 
 function get_receiving_account_donation_type(donation_type) {
 	return donation_type === "Zakat" ? "Zakat" : "Atiya";
+}
+
+function get_accounting_request_key(args) {
+	return [
+		args.company || "",
+		args.donation_type || "",
+		args.donation_purpose || "",
+		args.mode_of_payment || "",
+	].join("::");
+}
+
+function get_purpose_row_request_key(frm, row) {
+	return get_accounting_request_key({
+		company: frm.doc.company,
+		donation_type: row.donation_type,
+		donation_purpose: row.donation_purpose,
+		mode_of_payment: frm.doc.mode_of_payment,
+	}) + `::${row.donation_category || ""}::${row.name || ""}`;
 }
 
 function is_deposit_account_mode(frm) {

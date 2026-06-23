@@ -14,6 +14,7 @@ def send_pdc_reminders():
 	orders = frappe.get_all(
 		"Donation Order",
 		filters={
+			"docstatus": 1,
 			"mode_of_payment": "Cheque",
 			"is_post_dated_cheque": 1,
 			"pdc_status": "Pending Deposit",

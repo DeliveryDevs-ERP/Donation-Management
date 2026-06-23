@@ -74,7 +74,7 @@ class CouponBook(Document):
 		if self.is_new():
 			return
 
-		self.used_pages = frappe.db.count("Coupon", {"coupon_book": self.name})
+		self.used_pages = get_coupon_book_used_pages(self.name)
 
 	def set_remaining_pages(self):
 		self.remaining_pages = cint(self.total_pages) - cint(self.used_pages)
@@ -348,28 +348,23 @@ def return_coupon_book(
 
 
 def generate_return_coupons(doc, used_pages):
-	existing_coupon_count = frappe.db.count(
-		"Coupon",
-		{
-			"coupon_book": doc.name,
-			"docstatus": ["!=", 2],
-		},
-	)
-	if existing_coupon_count == used_pages:
+	existing_coupon_pages = get_coupon_book_used_pages(doc.name)
+	if existing_coupon_pages == used_pages:
 		return
 
-	if existing_coupon_count:
+	if existing_coupon_pages > used_pages:
 		frappe.throw(
 			frappe._(
-				"Coupon Book {0} already has {1} Coupon records. Please resolve them before returning the book."
-			).format(doc.name, existing_coupon_count)
+				"Coupon Book {0} already has {1} used pages. Please resolve them before returning the book with {2} used pages."
+			).format(doc.name, existing_coupon_pages, used_pages)
 		)
 
-	for _counter in range(used_pages):
+	for _counter in range(used_pages - existing_coupon_pages):
 		coupon = frappe.get_doc(
 			{
 				"doctype": "Coupon",
 				"coupon_book": doc.name,
+				"number_of_pages": 1,
 				"posting_date": today(),
 				"amount": cint(doc.coupon_value),
 			}
@@ -392,6 +387,23 @@ def get_coupon_book_collected_amount(coupon_book):
 			},
 			"sum(amount)",
 		)
+	)
+
+
+def get_coupon_book_used_pages(coupon_book):
+	if not coupon_book:
+		return 0
+
+	return cint(
+		frappe.db.sql(
+			"""
+			select sum(ifnull(number_of_pages, 1))
+			from `tabCoupon`
+			where coupon_book = %(coupon_book)s
+				and docstatus != 2
+			""",
+			{"coupon_book": coupon_book},
+		)[0][0]
 	)
 
 

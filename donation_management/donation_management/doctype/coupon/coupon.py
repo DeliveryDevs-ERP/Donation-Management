@@ -5,6 +5,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.model.naming import make_autoname
 from frappe.utils import cint
+from frappe.desk.reportview import get_match_cond
 
 
 COUPON_COLORS = {
@@ -24,13 +25,11 @@ COUPON_SERIES = {
 
 class Coupon(Document):
 	def before_insert(self):
-		if not self.flags.from_coupon_book_return:
-			frappe.throw(frappe._("Coupons are generated automatically when a Coupon Book is returned."))
-
 		self.set_coupon_number()
 
 	def validate(self):
 		self.set_coupon_book_details()
+		self.validate_number_of_pages()
 		self.validate_coupon_book_page_available()
 		self.set_coupon_color()
 		if not self.coupon_number:
@@ -54,21 +53,40 @@ class Coupon(Document):
 		coupon_book = frappe.db.get_value(
 			"Coupon Book",
 			self.coupon_book,
-			["coupon_type", "coupon_color", "volunteer_name", "volunteer_area", "warehouse", "status"],
+			[
+				"coupon_type",
+				"coupon_color",
+				"coupon_value",
+				"volunteer_name",
+				"volunteer_area",
+				"warehouse",
+				"status",
+			],
 			as_dict=True,
 		)
 		if not coupon_book:
 			frappe.throw(frappe._("Coupon Book {0} was not found.").format(self.coupon_book))
 
-		if coupon_book.status != "Issued":
+		if self.is_new() and coupon_book.status != "Issued":
 			frappe.throw(frappe._("Coupon Book {0} must be Issued before creating a Coupon.").format(self.coupon_book))
 
+		if not self.is_new() and coupon_book.status not in ("Issued", "Returned", "Closed"):
+			frappe.throw(frappe._("Coupon Book {0} must be Issued, Returned, or Closed.").format(self.coupon_book))
+
 		self.coupon_color = coupon_book.coupon_color
+		self.amount = cint(self.number_of_pages or 1) * cint(coupon_book.coupon_value)
 		self.volunteer_name = coupon_book.volunteer_name
 		self.area = coupon_book.volunteer_area
 		self.warehouse = coupon_book.warehouse
 
 		return coupon_book
+
+	def validate_number_of_pages(self):
+		if not cint(self.number_of_pages):
+			self.number_of_pages = 1
+
+		if cint(self.number_of_pages) <= 0:
+			frappe.throw(frappe._("Number of Pages must be greater than zero."))
 
 	def validate_coupon_book_page_available(self):
 		if not self.coupon_book:
@@ -90,17 +108,19 @@ class Coupon(Document):
 				"coupon_book": self.coupon_book,
 			},
 		)
-		used_coupon_count = get_used_coupon_count(
+		used_coupon_pages = get_used_coupon_pages(
 			self.coupon_book,
 			exclude_coupon=self.name if is_existing_coupon else None,
 		)
 
-		if used_coupon_count >= cint(coupon_book.total_pages) or (
-			cint(coupon_book.remaining_pages) <= 0 and not is_existing_coupon
-		):
+		if used_coupon_pages + cint(self.number_of_pages) > cint(coupon_book.total_pages):
 			frappe.throw(
-				frappe._("All pages are used for Coupon Book {0}. New Coupon cannot be created.").format(
+				frappe._(
+					"Only {0} pages are available for Coupon Book {1}. You entered {2} pages."
+				).format(
+					max(cint(coupon_book.total_pages) - used_coupon_pages, 0),
 					self.coupon_book,
+					cint(self.number_of_pages),
 				)
 			)
 
@@ -129,14 +149,23 @@ class Coupon(Document):
 		return coupon_type
 
 
-def get_used_coupon_count(coupon_book, exclude_coupon=None):
-	filters = {
-		"coupon_book": coupon_book,
-	}
+def get_used_coupon_pages(coupon_book, exclude_coupon=None):
+	conditions = ["coupon_book = %(coupon_book)s", "docstatus != 2"]
+	params = {"coupon_book": coupon_book}
 	if exclude_coupon:
-		filters["name"] = ["!=", exclude_coupon]
+		conditions.append("name != %(exclude_coupon)s")
+		params["exclude_coupon"] = exclude_coupon
 
-	return frappe.db.count("Coupon", filters)
+	return cint(
+		frappe.db.sql(
+			f"""
+			select sum(ifnull(number_of_pages, 1))
+			from `tabCoupon`
+			where {" and ".join(conditions)}
+			""",
+			params,
+		)[0][0]
+	)
 
 
 def sync_coupon_book_page_counts(coupon_book, exclude_coupon=None):
@@ -144,7 +173,7 @@ def sync_coupon_book_page_counts(coupon_book, exclude_coupon=None):
 	if total_pages is None:
 		return
 
-	used_pages = get_used_coupon_count(coupon_book, exclude_coupon=exclude_coupon)
+	used_pages = get_used_coupon_pages(coupon_book, exclude_coupon=exclude_coupon)
 	remaining_pages = max(cint(total_pages) - used_pages, 0)
 	frappe.db.set_value(
 		"Coupon Book",
@@ -154,4 +183,36 @@ def sync_coupon_book_page_counts(coupon_book, exclude_coupon=None):
 			"remaining_pages": remaining_pages,
 		},
 		update_modified=False,
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_available_coupon_books(doctype, txt, searchfield, start, page_len, filters):
+	return frappe.db.sql(
+		"""
+		select
+			name,
+			coupon_type,
+			warehouse,
+			remaining_pages
+		from `tabCoupon Book`
+		where
+			docstatus < 2
+			and status = 'Issued'
+			and ifnull(remaining_pages, 0) > 0
+			and (
+				name like %(txt)s
+				or coupon_type like %(txt)s
+				or warehouse like %(txt)s
+			)
+			{match_cond}
+		order by modified desc
+		limit %(page_len)s offset %(start)s
+		""".format(match_cond=get_match_cond("Coupon Book")),
+		{
+			"txt": f"%{txt}%",
+			"start": start,
+			"page_len": page_len,
+		},
 	)

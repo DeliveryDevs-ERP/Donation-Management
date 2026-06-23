@@ -72,6 +72,7 @@ class DonationOrder(Document):
 	def on_submit(self):
 		if self.is_pending_pdc():
 			self.accounting_status = "Not Posted"
+			self.db_set("accounting_status", "Not Posted", update_modified=False)
 			return
 		self.create_journal_entry()
 
@@ -539,7 +540,7 @@ class DonationOrder(Document):
 			self.mode_of_payment_type = mode_details.get("mode_of_payment_type")
 			if self.mode_of_payment_type == "Cash":
 				self.bank_account = None
-				if not self.debit_account or frappe.db.get_value("Account", self.debit_account, "account_type") != "Cash":
+				if not self.debit_account or self.get_account_details(self.debit_account).account_type != "Cash":
 					self.debit_account = get_default_cash_account(
 						self.company,
 						self.mode_of_payment,
@@ -565,7 +566,7 @@ class DonationOrder(Document):
 				self.debit_account = self.get_first_purpose_debit_account()
 			elif self.is_manual_bank_mode():
 				self.bank_account = None
-				if not self.debit_account or frappe.db.get_value("Account", self.debit_account, "account_type") != "Bank":
+				if not self.debit_account or self.get_account_details(self.debit_account).account_type != "Bank":
 					self.debit_account = mode_details.get("debit_account")
 				for row in self.purpose_details:
 					row.debit_account = self.debit_account
@@ -675,8 +676,7 @@ class DonationOrder(Document):
 			)
 
 		if self.mode_of_payment_type == "Cash":
-			account_type = frappe.db.get_value("Account", self.debit_account, "account_type")
-			if account_type != "Cash":
+			if self.get_account_details(self.debit_account).account_type != "Cash":
 				frappe.throw(
 					frappe._("Debit Account must be a {0} account for Mode of Payment {1}.").format(
 						"Cash",
@@ -747,12 +747,7 @@ class DonationOrder(Document):
 		return None
 
 	def validate_account(self, account, label, allowed_account_types=None, allowed_root_types=None):
-		account_details = frappe.db.get_value(
-			"Account",
-			account,
-			["name", "company", "is_group", "account_type", "root_type"],
-			as_dict=True,
-		)
+		account_details = self.get_account_details(account)
 		if not account_details:
 			frappe.throw(frappe._("{0} {1} was not found.").format(label, account))
 
@@ -772,6 +767,23 @@ class DonationOrder(Document):
 					", ".join(allowed_account_types),
 				)
 			)
+
+	def get_account_details(self, account):
+		if not account:
+			return frappe._dict()
+
+		if not hasattr(self, "_account_details_cache"):
+			self._account_details_cache = {}
+
+		if account not in self._account_details_cache:
+			self._account_details_cache[account] = frappe.db.get_value(
+				"Account",
+				account,
+				["name", "company", "is_group", "account_type", "root_type"],
+				as_dict=True,
+			) or frappe._dict()
+
+		return self._account_details_cache[account]
 
 		if allowed_root_types and account_details.root_type not in allowed_root_types:
 			frappe.throw(
@@ -914,7 +926,7 @@ class DonationOrder(Document):
 		self.set_accounting_fields(entry.name, "Posted")
 
 	def get_journal_entry_account_row(self, account, debit, credit, cost_center=None):
-		account_type = frappe.db.get_value("Account", account, "account_type")
+		account_type = self.get_account_details(account).account_type
 		row = {
 			"account": account,
 			"debit_in_account_currency": debit,
@@ -993,7 +1005,7 @@ def create_pdc_journal_entry(donation_order):
 	doc.check_permission("write")
 
 	if not doc.is_cheque_mode() or not cint(doc.is_post_dated_cheque):
-		frappe.throw(frappe._("Create Journal Entry is only available for post-dated cheque Donation Orders."))
+		frappe.throw(frappe._("Create Payment Entry is only available for post-dated cheque Donation Orders."))
 
 	if doc.docstatus != 1:
 		frappe.throw(frappe._("Donation Order must be submitted before creating Journal Entry."))
@@ -1002,7 +1014,7 @@ def create_pdc_journal_entry(donation_order):
 		frappe.throw(frappe._("Only pending PDC Donation Orders can be deposited."))
 
 	if doc.journal_entry:
-		frappe.throw(frappe._("Journal Entry already exists for this Donation Order."))
+		frappe.throw(frappe._("Payment Entry already exists for this Donation Order."))
 
 	if getdate(doc.cheque_deposit_date) > getdate(today()):
 		frappe.throw(
@@ -1013,19 +1025,20 @@ def create_pdc_journal_entry(donation_order):
 
 	doc.create_journal_entry(force_pdc=True)
 	if not doc.journal_entry:
-		frappe.throw(frappe._("Journal Entry could not be created for this Donation Order."))
+		frappe.throw(frappe._("Payment Entry could not be created for this Donation Order."))
 
+	posted_on = now_datetime()
 	frappe.db.set_value(
 		doc.doctype,
 		doc.name,
 		{
 			"pdc_status": PDC_STATUS_DEPOSITED,
-			"pdc_posted_on": now_datetime(),
+			"pdc_posted_on": posted_on,
 		},
 		update_modified=False,
 	)
 	doc.pdc_status = PDC_STATUS_DEPOSITED
-	doc.pdc_posted_on = now_datetime()
+	doc.pdc_posted_on = posted_on
 
 	return {
 		"journal_entry": doc.journal_entry,

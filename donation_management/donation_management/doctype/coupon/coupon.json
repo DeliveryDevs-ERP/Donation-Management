@@ -25,6 +25,7 @@
   "column_break_xjfk",
   "posting_date",
   "section_break_miro",
+  "number_of_pages",
   "amount"
  ],
  "fields": [
@@ -137,10 +138,21 @@
    "label": "Amount"
   },
   {
+   "default": "1",
+   "fieldname": "number_of_pages",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Number of Pages",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
    "fieldname": "amount",
    "fieldtype": "Currency",
-   "label": "Amount",
-   "non_negative": 1
+   "in_list_view": 1,
+   "label": "Total Amount",
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -162,6 +174,17 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Finance Manager",
    "share": 1,
    "write": 1
   }

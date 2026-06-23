@@ -184,7 +184,7 @@ def get_mode_of_payment_account(company, mode_of_payment, donation_type=None):
 
 	if mode_of_payment_type == "Cash":
 		default_account = get_default_cash_account(company, mode_of_payment)
-	elif mode_of_payment_type == "Bank" and donation_type:
+	elif mode_of_payment == "Bank Draft" and mode_of_payment_type == "Bank" and donation_type:
 		default_account = get_donation_type_receiving_account(company, mode_of_payment_type, donation_type, default_account)
 
 	return {

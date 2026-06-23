@@ -144,10 +144,15 @@ doctype_list_js = {
 # ---------------
 # Hook on document methods and events
 
+purchase_tax_doc_events = {
+	"before_validate": "donation_management.purchase_taxes.force_purchase_tax_deduction",
+}
+
 doc_events = {
-	"*": {
-		"before_validate": "donation_management.purchase_taxes.force_purchase_tax_deduction",
-	},
+	"Purchase Invoice": purchase_tax_doc_events,
+	"Purchase Order": purchase_tax_doc_events,
+	"Purchase Receipt": purchase_tax_doc_events,
+	"Supplier Quotation": purchase_tax_doc_events,
 	"Additional Salary": {
 		"before_validate": "donation_management.hr_payroll.sync_additional_salary_controls",
 		"before_update_after_submit": "donation_management.hr_payroll.sync_additional_salary_controls",

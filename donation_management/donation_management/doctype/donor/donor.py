@@ -19,6 +19,7 @@ class Donor(NestedSet):
 	nsm_parent_field = "parent_donor"
 
 	def validate(self):
+		self.set_naming_series()
 		self.set_donor_type()
 		self.set_trustee_reference()
 		self.validate_parent_donor()
@@ -33,6 +34,10 @@ class Donor(NestedSet):
 	def set_donor_type(self):
 		if self.customer_type not in VALID_DONOR_TYPES:
 			self.customer_type = "Walk-in"
+
+	def set_naming_series(self):
+		if self.is_new() and self.naming_series != "DONOR-.YYYY.-":
+			self.naming_series = "DONOR-.YYYY.-"
 
 	def set_trustee_reference(self):
 		if self.customer_type == "Walk-in":
