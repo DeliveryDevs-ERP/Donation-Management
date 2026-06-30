@@ -9,35 +9,6 @@ def execute():
 
 def get_custom_fields():
 	return {
-		"Employee": [
-			{
-				"fieldname": "custom_region",
-				"fieldtype": "Link",
-				"label": "Region",
-				"options": "Region",
-				"insert_after": "branch",
-			},
-			{
-				"fieldname": "custom_madrasa",
-				"fieldtype": "Link",
-				"label": "Madrasa",
-				"options": "Madrasa",
-				"insert_after": "custom_region",
-			},
-			{
-				"fieldname": "custom_city",
-				"fieldtype": "Data",
-				"label": "City",
-				"insert_after": "custom_madrasa",
-			},
-			{
-				"fieldname": "custom_payroll_group",
-				"fieldtype": "Link",
-				"label": "Payroll Group",
-				"options": "Payroll Group",
-				"insert_after": "custom_city",
-			},
-		],
 		"Branch": [
 			{
 				"fieldname": "custom_region",

@@ -5,4 +5,9 @@ from frappe.model.document import Document
 
 
 class Madrasa(Document):
-	pass
+	def validate(self):
+		self.master_id = self.name
+		if not self.title and self.madrasa_name:
+			self.title = self.madrasa_name
+		if not self.madrasa_name and self.title:
+			self.madrasa_name = self.title
