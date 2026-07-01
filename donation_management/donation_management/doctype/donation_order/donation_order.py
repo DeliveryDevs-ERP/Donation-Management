@@ -922,24 +922,17 @@ class DonationOrder(Document):
 		)
 		entry.insert(ignore_permissions=True)
 		entry.submit()
-		self.set_gl_entry_party(entry.name)
 		self.set_accounting_fields(entry.name, "Posted")
 
 	def get_journal_entry_account_row(self, account, debit, credit, cost_center=None):
-		account_type = self.get_account_details(account).account_type
 		row = {
 			"account": account,
 			"debit_in_account_currency": debit,
 			"credit_in_account_currency": credit,
+			"party_type": "Donor",
+			"party": self.donor_name,
 			"user_remark": "Donor: {0}".format(self.donor_name),
 		}
-		if account_type in ("Receivable", "Payable", "Equity"):
-			row.update(
-				{
-					"party_type": "Donor",
-					"party": self.donor_name,
-				}
-			)
 
 		if cost_center:
 			row["cost_center"] = cost_center
@@ -984,8 +977,7 @@ class DonationOrder(Document):
 			self.accounting_status = "Cancelled"
 
 	def set_gl_entry_party(self, journal_entry):
-		# ERPNext blocks party fields on Bank/Income Journal Entry rows, but JTQ needs
-		# donor-wise General Ledger reporting. Set party on generated GL rows only.
+		# Backfill legacy entries created before party was stored on every JE row.
 		frappe.db.sql(
 			"""
 			update `tabGL Entry`

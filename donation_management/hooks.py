@@ -55,6 +55,18 @@ doctype_list_js = {
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
+# Fixtures
+# --------
+fixtures = [
+	{
+		"dt": "Property Setter",
+		"filters": [
+			["doc_type", "=", "Party Type"],
+			["field_name", "=", "account_type"],
+		],
+	},
+]
+
 # Svg Icons
 # ------------------
 # include app icons in desk
@@ -136,9 +148,9 @@ doctype_list_js = {
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"GL Entry": "donation_management.gl_entry.CustomGLEntry",
+}
 
 # Document Events
 # ---------------
