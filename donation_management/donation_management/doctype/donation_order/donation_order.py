@@ -87,6 +87,7 @@ class DonationOrder(Document):
 			return
 		self.set_bank_deposit_status()
 		self.create_journal_entry()
+		self.update_donor_program_enrollments()
 
 	def on_cancel(self):
 		self.cancel_linked_journal_entry()

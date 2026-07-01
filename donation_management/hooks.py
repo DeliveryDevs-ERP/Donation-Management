@@ -191,9 +191,6 @@ scheduler_events = {
 # Overriding Methods
 # ------------------------------
 #
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "donation_management.event.get_events"
-# }
 override_whitelisted_methods = {
 	"frappe.desk.form.load.getdoctype": "donation_management.donation_management.api.safe_getdoctype",
 }
@@ -201,9 +198,6 @@ override_whitelisted_methods = {
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
-# override_doctype_dashboards = {
-# 	"Task": "donation_management.task.get_dashboard_data"
-# }
 override_doctype_dashboards = {
 	"Donor": "donation_management.donation_management.doctype.donor.donor_dashboard.get_data",
 }

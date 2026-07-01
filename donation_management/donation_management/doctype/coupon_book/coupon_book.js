@@ -176,9 +176,17 @@ function add_action_buttons(frm) {
 		frm.add_custom_button(__("Issue"), () => issue_coupon_book(frm), __("Actions"));
 	} else if (frm.doc.status === "Issued") {
 		frm.add_custom_button(__("Return"), () => show_return_dialog(frm), __("Actions"));
+		frm.add_custom_button(__("Request Page Adjustment"), () => create_page_adjustment(frm), __("Actions"));
 	} else if (frm.doc.status === "Returned") {
 		frm.add_custom_button(__("Close"), () => close_coupon_book(frm), __("Actions"));
+		frm.add_custom_button(__("Request Page Adjustment"), () => create_page_adjustment(frm), __("Actions"));
 	}
+}
+
+function create_page_adjustment(frm) {
+	frappe.new_doc("Coupon Book Page Adjustment", {
+		coupon_book: frm.doc.name,
+	});
 }
 
 function issue_coupon_book(frm) {

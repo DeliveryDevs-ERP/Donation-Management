@@ -45,7 +45,7 @@
    "fieldname": "amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Amount",
+   "label": "Paid Amount",
    "non_negative": 1,
    "reqd": 1
   },
