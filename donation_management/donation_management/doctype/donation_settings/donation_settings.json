@@ -1,0 +1,72 @@
+{
+ "actions": [],
+ "creation": "2026-07-01 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "donor_section",
+  "allow_donor_without_phone_or_email",
+  "allow_duplicate_donor_phone"
+ ],
+ "fields": [
+  {
+   "fieldname": "donor_section",
+   "fieldtype": "Section Break",
+   "label": "Donor"
+  },
+  {
+   "default": "0",
+   "description": "If enabled, Donors can be created or imported without Phone Number or Email.",
+   "fieldname": "allow_donor_without_phone_or_email",
+   "fieldtype": "Check",
+   "label": "Allow Donor Without Phone or Email"
+  },
+  {
+   "default": "0",
+   "description": "If enabled, multiple Donors may share the same phone number (useful for bulk import and family donors).",
+   "fieldname": "allow_duplicate_donor_phone",
+   "fieldtype": "Check",
+   "label": "Allow Duplicate Donor Phone Number"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-01 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Donation Management",
+ "name": "Donation Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Donation Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Donation User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

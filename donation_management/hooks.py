@@ -27,7 +27,9 @@ app_license = "mit"
 # include js, css files in header of desk.html
 # app_include_css = "/assets/donation_management/css/donation_management.css"
 app_include_js = [
+	"/assets/donation_management/js/frappe_model_guard.js",
 	"/assets/donation_management/js/purchase_taxes_and_charges.js",
+	
 ]
 
 # include js, css files in header of web template
@@ -48,6 +50,7 @@ app_include_js = [
 doctype_js = {
 	"Journal Entry": "public/js/journal_entry.js",
 	"Additional Salary": "public/js/additional_salary.js",
+	"Data Import": "public/js/data_import.js",
 }
 doctype_list_js = {
 	"Journal Entry": "public/js/journal_entry_list.js",
@@ -191,6 +194,9 @@ scheduler_events = {
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "donation_management.event.get_events"
 # }
+override_whitelisted_methods = {
+	"frappe.desk.form.load.getdoctype": "donation_management.donation_management.api.safe_getdoctype",
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -198,6 +204,9 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "donation_management.task.get_dashboard_data"
 # }
+override_doctype_dashboards = {
+	"Donor": "donation_management.donation_management.doctype.donor.donor_dashboard.get_data",
+}
 
 # exempt linked doctypes from being automatically cancelled
 #

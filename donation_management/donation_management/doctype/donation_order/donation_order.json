@@ -7,9 +7,11 @@
  "engine": "InnoDB",
  "field_order": [
   "donor_section",
+  "donor_phone_number",
+  "donor_email",
   "donor_cnic",
   "donor_name",
-  "donor_phone_number",
+  "donor_program_enrollments_html",
   "referred_by_trustee",
   "donor_column_break",
   "name_on_donation_slip",
@@ -23,6 +25,7 @@
   "cheque_number",
   "cheque_deposit_date",
   "pdc_status",
+  "column_break_urhi",
   "pdc_posted_on",
   "bank_account",
   "debit_account",
@@ -37,15 +40,20 @@
   "credit_account",
   "accounting_cost_center",
   "journal_entry",
+  "column_break_ekvb",
   "accounting_status",
+  "bank_deposit_status",
   "sponsorship_section",
   "sponsorship_students",
   "beneficiary_section",
   "student_name",
+  "column_break_driv",
   "student_mode",
+  "column_break_xgav",
   "prisoner_name",
   "amount_section",
   "donation_amount",
+  "column_break_kyhp",
   "total_donation",
   "sponsorship_amount_section",
   "sponsorship_amount",
@@ -55,9 +63,11 @@
   "total_program_amount",
   "available_allocation_amount",
   "remaining_program_cost",
+  "column_break_uuuh",
   "allocation_status",
   "previous_sponsorship_balance",
   "previous_balance_used",
+  "column_break_rmsa",
   "sponsored_student_count",
   "total_sponsored_beneficiaries",
   "total_covered_months",
@@ -73,10 +83,27 @@
    "label": "Donor Details"
   },
   {
-   "fieldname": "donor_cnic",
+   "fieldname": "donor_phone_number",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Donor CNIC"
+   "label": "Donor Phone Number",
+   "options": "Phone"
+  },
+  {
+   "fetch_from": "donor_name.donor_email",
+   "fieldname": "donor_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Donor Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "donor_cnic",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Donor CNIC",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "donor_name",
@@ -87,11 +114,10 @@
    "reqd": 1
   },
   {
-   "fetch_from": "donor_name.donor_phone_number",
-   "fieldname": "donor_phone_number",
-   "fieldtype": "Data",
-   "label": "Donor Phone Number",
-   "options": "Phone"
+   "fieldname": "donor_program_enrollments_html",
+   "fieldtype": "HTML",
+   "label": "Donor Program Enrollments",
+   "read_only": 1
   },
   {
    "fetch_from": "donor_name.referred_by_trustee",
@@ -112,6 +138,7 @@
    "reqd": 1
   },
   {
+   "default": "Now",
    "fieldname": "donation_posting_date",
    "fieldtype": "Datetime",
    "label": "Donation Posting Date"
@@ -405,6 +432,14 @@
    "read_only": 1
   },
   {
+   "default": "Not Applicable",
+   "fieldname": "bank_deposit_status",
+   "fieldtype": "Select",
+   "label": "Bank Deposit Status",
+   "options": "\nNot Applicable\nPending Bank Deposit\nDeposited",
+   "read_only": 1
+  },
+  {
    "depends_on": "eval:doc.purpose_of_donation == 'Sponsorship' && doc.donation_purpose",
    "fieldname": "sponsorship_section",
    "fieldtype": "Section Break",
@@ -482,13 +517,41 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "column_break_urhi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_ekvb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_driv",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_xgav",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_kyhp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_uuuh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_rmsa",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-06-15 18:44:01.311922",
+ "modified": "2026-07-01 05:28:19.268806",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Donation Order",
@@ -514,5 +577,6 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "donor_name"
+ "title_field": "donor_name",
+ "track_changes": 1
 }

@@ -5,7 +5,10 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
-from donation_management.donation_management.doctype.donor.donor import normalize_cnic, normalize_phone
+from donation_management.donation_management.doctype.donor.donor import normalize_phone
+from donation_management.donation_management.doctype.donor_program_enrollment.donor_program_enrollment import (
+	upsert_donor_program_enrollment,
+)
 from donation_management.donation_management.api import (
 	account_matches_donation_type,
 	get_default_company,
@@ -70,10 +73,19 @@ class DonationOrder(Document):
 		pass
 
 	def on_submit(self):
+		if self.is_pending_pdc() and getdate(self.cheque_deposit_date) > getdate(today()):
+			frappe.throw(
+				frappe._("Post-Dated Cheque Donation Order can only be submitted on or after {0}.").format(
+					frappe.format_value(self.cheque_deposit_date, {"fieldtype": "Date"})
+				)
+			)
+
+		self.update_donor_program_enrollments()
 		if self.is_pending_pdc():
 			self.accounting_status = "Not Posted"
 			self.db_set("accounting_status", "Not Posted", update_modified=False)
 			return
+		self.set_bank_deposit_status()
 		self.create_journal_entry()
 
 	def on_cancel(self):
@@ -108,16 +120,17 @@ class DonationOrder(Document):
 			self.currency = frappe.db.get_value("Company", self.company, "default_currency")
 
 	def set_donor_details(self):
-		if self.donor_cnic:
-			self.donor_cnic = normalize_cnic(self.donor_cnic)
-
-		if not self.donor_name and self.donor_cnic:
-			self.donor_name = frappe.db.get_value("Donor", {"donor_cnic": self.donor_cnic}, "name")
-
 		if not self.donor_name and self.donor_phone_number:
 			self.donor_name = frappe.db.get_value(
 				"Donor",
 				{"donor_phone_digits": normalize_phone(self.donor_phone_number)},
+				"name",
+			)
+
+		if not self.donor_name and self.donor_email:
+			self.donor_name = frappe.db.get_value(
+				"Donor",
+				{"donor_email": self.donor_email.strip().lower()},
 				"name",
 			)
 
@@ -127,27 +140,18 @@ class DonationOrder(Document):
 		donor = frappe.db.get_value(
 			"Donor",
 			self.donor_name,
-			["name", "customer_name", "donor_cnic", "donor_phone_number", "donor_phone_digits", "referred_by_trustee"],
+			[
+				"name",
+				"customer_name",
+				"donor_email",
+				"donor_phone_number",
+				"donor_phone_digits",
+				"referred_by_trustee",
+			],
 			as_dict=True,
 		)
 		if not donor:
 			frappe.throw(frappe._("Donor {0} was not found.").format(self.donor_name))
-
-		if self.donor_cnic and donor.donor_cnic and self.donor_cnic != donor.donor_cnic:
-			frappe.throw(
-				frappe._("Donor CNIC {0} does not match selected Donor {1}.").format(
-					self.donor_cnic,
-					donor.name,
-				)
-			)
-
-		if self.donor_cnic and not donor.donor_cnic:
-			frappe.throw(
-				frappe._("Selected Donor {0} does not have CNIC {1}.").format(
-					donor.name,
-					self.donor_cnic,
-				)
-			)
 
 		if self.donor_phone_number:
 			donor_phone_digits = normalize_phone(self.donor_phone_number)
@@ -159,19 +163,42 @@ class DonationOrder(Document):
 					)
 				)
 
-			if donor_phone_digits and not donor.donor_phone_digits:
-				frappe.throw(
-					frappe._("Selected Donor {0} does not have Phone Number {1}.").format(
-						donor.name,
-						self.donor_phone_number,
-					)
+		if self.donor_email and donor.donor_email and self.donor_email.strip().lower() != donor.donor_email:
+			frappe.throw(
+				frappe._("Donor Email {0} does not match selected Donor {1}.").format(
+					self.donor_email,
+					donor.name,
 				)
+			)
 
-		self.donor_cnic = donor.donor_cnic or None
+		self.donor_email = donor.donor_email or self.donor_email
 		self.donor_phone_number = donor.donor_phone_number
 		self.referred_by_trustee = donor.referred_by_trustee
 		if not self.name_on_donation_slip:
 			self.name_on_donation_slip = donor.customer_name
+
+	def set_bank_deposit_status(self):
+		if self.mode_of_payment_type == "Cash" and self.accounting_status == "Posted":
+			self.bank_deposit_status = "Pending Bank Deposit"
+		else:
+			self.bank_deposit_status = "Not Applicable"
+		self.db_set("bank_deposit_status", self.bank_deposit_status, update_modified=False)
+
+	def update_donor_program_enrollments(self):
+		if not self.is_sponsorship() or not self.donor_name:
+			return
+
+		for row in self.sponsorship_students or []:
+			if not row.sponsorship_program or not row.quantity:
+				continue
+
+			upsert_donor_program_enrollment(
+				donor=self.donor_name,
+				sponsorship_program=row.sponsorship_program,
+				student_quantity=row.quantity,
+				donation_purpose=self.donation_purpose,
+				donation_order=self.name,
+			)
 
 	def set_purpose_details(self):
 		self.add_legacy_purpose_row_if_needed()
@@ -336,6 +363,8 @@ class DonationOrder(Document):
 		if not self.sponsorship_students:
 			frappe.throw(frappe._("At least one Sponsorship Allocation row is required."))
 
+		self.auto_allocate_sponsorship_amounts()
+
 		allocated_amount = 0
 		total_program_amount = 0
 		total_sponsored_beneficiaries = 0
@@ -362,7 +391,10 @@ class DonationOrder(Document):
 		self.unallocated_amount = flt(self.available_allocation_amount) - allocated_amount
 		self.sponsorship_amount = flt(self.get_sponsorship_purpose_amount())
 		self.total_program_amount = total_program_amount
-		self.remaining_program_cost = max(total_program_amount - allocated_amount, 0)
+		prior_program_allocated = self.get_donor_program_prior_allocated_total()
+		self.remaining_program_cost = max(
+			total_program_amount - prior_program_allocated - allocated_amount, 0
+		)
 		self.set_allocation_status()
 		self.sponsored_student_count = total_sponsored_beneficiaries
 		self.total_sponsored_beneficiaries = total_sponsored_beneficiaries
@@ -392,12 +424,55 @@ class DonationOrder(Document):
 			if row.donation_category == SPONSORSHIP_PURPOSE
 		)
 
+	def auto_allocate_sponsorship_amounts(self):
+		rows = self.get("sponsorship_students") or []
+		if not rows:
+			return
+
+		available = flt(self.available_allocation_amount)
+		if available <= 0:
+			return
+
+		if len(rows) == 1:
+			row = rows[0]
+			if not row.sponsorship_program or cint(row.quantity) <= 0:
+				return
+			if flt(row.allocated_amount) > 0:
+				return
+
+			total_program = self.get_sponsorship_row_total_program_donation(row)
+			row.allocated_amount = min(available, total_program)
+			return
+
+		remaining = available
+		for row in rows:
+			if flt(row.allocated_amount) > 0:
+				remaining -= flt(row.allocated_amount)
+				continue
+
+			if not row.sponsorship_program or cint(row.quantity) <= 0:
+				continue
+
+			total_program = self.get_sponsorship_row_total_program_donation(row)
+			row.allocated_amount = min(max(remaining, 0), total_program)
+			remaining -= flt(row.allocated_amount)
+
+	def get_sponsorship_row_total_program_donation(self, row):
+		if flt(row.total_program_donation) > 0:
+			return flt(row.total_program_donation)
+
+		if not row.sponsorship_program:
+			return 0
+
+		program = frappe.get_cached_doc("Sponsorship Program", row.sponsorship_program)
+		return flt(program.monthly_donation) * cint(program.duration_months) * cint(row.quantity)
+
 	def get_donor_previous_sponsorship_balance(self):
 		filters = {
 			"donor_name": self.donor_name,
 			"purpose_of_donation": SPONSORSHIP_PURPOSE,
 			"name": ["!=", self.name],
-			"docstatus": ["!=", 2],
+			"docstatus": 1,
 		}
 		if self.donation_type:
 			filters["donation_type"] = self.donation_type
@@ -510,7 +585,62 @@ class DonationOrder(Document):
 		row.remaining_months = remaining_days / SPONSORSHIP_DAYS_IN_MONTH
 		row.covered_duration = format_sponsorship_duration(covered_days)
 		row.remaining_duration = format_sponsorship_duration(remaining_days)
-		row.remaining_amount = max(flt(row.total_program_donation) - flt(row.allocated_amount), 0)
+		prior_allocated = self.get_donor_program_prior_allocated(row.sponsorship_program)
+		row.remaining_amount = max(
+			flt(row.total_program_donation) - prior_allocated - flt(row.allocated_amount), 0
+		)
+
+	def get_donor_program_prior_allocated_map(self):
+		programs = list(
+			{
+				row.sponsorship_program
+				for row in self.get("sponsorship_students") or []
+				if row.sponsorship_program
+			}
+		)
+		if not programs or not self.donor_name:
+			return {}
+
+		filters = {
+			"donor_name": self.donor_name,
+			"docstatus": 1,
+		}
+		if not self.is_new():
+			filters["name"] = ["!=", self.name]
+
+		rows = frappe.db.sql(
+			"""
+			select
+				dosa.sponsorship_program,
+				ifnull(sum(dosa.allocated_amount), 0) as prior_allocated
+			from `tabDonation Order Sponsorship Allocation` dosa
+			inner join `tabDonation Order` do on do.name = dosa.parent
+			where do.donor_name = %(donor_name)s
+				and do.docstatus = 1
+				and dosa.sponsorship_program in %(programs)s
+				{exclude_clause}
+			group by dosa.sponsorship_program
+			""".format(
+				exclude_clause="and do.name != %(exclude_order)s" if not self.is_new() else ""
+			),
+			{
+				"donor_name": self.donor_name,
+				"programs": programs,
+				"exclude_order": self.name,
+			},
+			as_dict=True,
+		)
+		return {row.sponsorship_program: flt(row.prior_allocated) for row in rows}
+
+	def get_donor_program_prior_allocated(self, sponsorship_program):
+		if not sponsorship_program or not self.donor_name:
+			return 0
+
+		return self.get_donor_program_prior_allocated_map().get(sponsorship_program, 0)
+
+	def get_donor_program_prior_allocated_total(self):
+		prior_map = self.get_donor_program_prior_allocated_map()
+		return sum(prior_map.values())
 
 	def set_total_donation(self):
 		if self.is_sponsorship():
@@ -977,7 +1107,16 @@ class DonationOrder(Document):
 			self.accounting_status = "Cancelled"
 
 	def set_gl_entry_party(self, journal_entry):
-		# Backfill legacy entries created before party was stored on every JE row.
+		# Backfill entries created before Donor was stored on every Journal Entry row.
+		frappe.db.sql(
+			"""
+			update `tabJournal Entry Account`
+			set party_type = %s,
+				party = %s
+			where parent = %s
+			""",
+			("Donor", self.donor_name, journal_entry),
+		)
 		frappe.db.sql(
 			"""
 			update `tabGL Entry`

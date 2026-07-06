@@ -1,0 +1,155 @@
+// Copyright (c) 2026, osama.ahmed@deliverydevs.com and contributors
+// For license information, please see license.txt
+
+frappe.ui.form.on("Donation Closing", {
+	setup(frm) {
+		frm.set_query("bank_account", () => {
+			const filters = { is_group: 0, account_type: "Bank" };
+			if (frm.doc.company) {
+				filters.company = frm.doc.company;
+			}
+			return { filters };
+		});
+	},
+
+	onload(frm) {
+		if (frappe.route_options && frappe.route_options.show_fetch_alert) {
+			frappe.show_alert({
+				message: frappe.route_options.show_fetch_alert,
+				indicator: "green",
+			});
+			delete frappe.route_options.show_fetch_alert;
+		}
+	},
+
+	refresh(frm) {
+		if (frm.is_new() || frm.doc.docstatus === 0) {
+			frm.add_custom_button(__("Fetch Pending Cash Donations"), () => fetch_pending(frm));
+		}
+
+		if (frm.doc.docstatus === 1 && ["Submitted", "Pending Bank Deposit"].includes(frm.doc.status)) {
+			const roles = frappe.user_roles || [];
+			if (has_any_role(roles, ["Finance Manager", "CFO", "System Manager"])) {
+				frm.add_custom_button(__("Record Bank Deposit"), () => show_bank_deposit_dialog(frm));
+			}
+		}
+	},
+});
+
+function has_any_role(user_roles, required_roles) {
+	return required_roles.some((role) => user_roles.includes(role));
+}
+
+function fetch_pending(frm) {
+	if (!frm.doc.company) {
+		frappe.msgprint(__("Company is required before fetching pending cash donations."));
+		return;
+	}
+
+	frappe.call({
+		doc: frm.doc,
+		method: "fetch_pending_cash_donations",
+		freeze: true,
+		callback(response) {
+			const result = response.message || {};
+
+			if (!result.count) {
+				frm.clear_table("closing_details");
+				frm.set_value("total_amount", 0);
+				frm.set_value("pending_items_count", 0);
+				frm.refresh_field("closing_details");
+				frappe.msgprint({
+					title: __("No Pending Cash"),
+					message: result.message || __("No pending cash donations were found."),
+					indicator: "orange",
+				});
+				return;
+			}
+
+			const alert_message = __("Fetched {0} items totaling {1}", [
+				result.count || 0,
+				format_currency(result.total_amount || 0),
+			]);
+
+			if (result.name && frm.doc.name !== result.name) {
+				frappe.route_options = { show_fetch_alert: alert_message };
+				frappe.set_route("Form", "Donation Closing", result.name);
+				return;
+			}
+
+			apply_fetch_result(frm, result);
+			frappe.show_alert({ message: alert_message, indicator: "green" });
+		},
+	});
+}
+
+function apply_fetch_result(frm, result) {
+	frm.clear_table("closing_details");
+	(result.closing_details || []).forEach((row) => {
+		frm.add_child("closing_details", row);
+	});
+	frm.set_value("total_amount", result.total_amount || 0);
+	frm.set_value("pending_items_count", result.count || 0);
+	frm.refresh_field("closing_details");
+}
+
+function show_bank_deposit_dialog(frm) {
+	const dialog = new frappe.ui.Dialog({
+		title: __("Record Bank Deposit"),
+		fields: [
+			{
+				fieldname: "bank_deposit_date",
+				fieldtype: "Date",
+				label: __("Cash Deposit Slip Date"),
+				reqd: 1,
+				default: frm.doc.bank_deposit_date || frappe.datetime.get_today(),
+			},
+			{
+				fieldname: "bank_deposit_reference",
+				fieldtype: "Data",
+				label: __("Deposit Reference"),
+				default: frm.doc.bank_deposit_reference,
+			},
+			{
+				fieldname: "bank_account",
+				fieldtype: "Link",
+				label: __("Bank Account"),
+				options: "Account",
+				reqd: 1,
+				default: frm.doc.bank_account,
+				get_query() {
+					return {
+						filters: {
+							is_group: 0,
+							account_type: "Bank",
+							company: frm.doc.company,
+						},
+					};
+				},
+			},
+		],
+		primary_action_label: __("Submit Bank Deposit"),
+		primary_action(values) {
+			dialog.hide();
+			frappe.call({
+				doc: frm.doc,
+				method: "submit_bank_deposit",
+				args: {
+					bank_deposit_date: values.bank_deposit_date,
+					bank_deposit_reference: values.bank_deposit_reference,
+					bank_account: values.bank_account,
+				},
+				freeze: true,
+				callback() {
+					frm.reload_doc();
+					frappe.show_alert({ message: __("Bank deposit recorded"), indicator: "green" });
+				},
+			});
+		},
+	});
+	dialog.show();
+}
+
+function format_currency(amount) {
+	return frappe.format(amount, { fieldtype: "Currency" });
+}

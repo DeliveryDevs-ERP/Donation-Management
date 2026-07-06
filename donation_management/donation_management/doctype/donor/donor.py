@@ -7,8 +7,20 @@ import frappe
 from frappe.utils import cint
 from frappe.utils.nestedset import NestedSet
 
+from donation_management.donation_management.doctype.donation_settings.donation_settings import (
+	is_donor_contact_required,
+	is_duplicate_donor_phone_allowed,
+)
 
-VALID_DONOR_TYPES = ("Walk-in", "Refered by Trustee")
+
+VALID_DONOR_TYPES = (
+	"Walk-in",
+	"Refered by Trustee",
+	"Key Donor",
+	"Sub General Donor",
+	"General Donor",
+	"Sub Key Donor",
+)
 DONOR_BRANCH = "Branch:Donor"
 TRUSTEE_BRANCH = "Branch:Refered by Trustee"
 DONOR_NODE_PREFIX = "Donor:"
@@ -23,24 +35,29 @@ class Donor(NestedSet):
 		self.set_donor_type()
 		self.set_trustee_reference()
 		self.validate_parent_donor()
-		self.set_donor_cnic()
 		self.set_donor_phone_digits()
-		self.validate_unique_donor_cnic()
+		self.set_donor_email()
+		self.validate_contact_details()
 		self.validate_unique_donor_phone()
+		self.validate_unique_donor_email()
 
 	def on_update(self):
 		super().on_update()
 
 	def set_donor_type(self):
 		if self.customer_type not in VALID_DONOR_TYPES:
-			self.customer_type = "Walk-in"
+			frappe.throw(
+				frappe._("Donor Type must be one of: {0}.").format(
+					", ".join(VALID_DONOR_TYPES)
+				)
+			)
 
 	def set_naming_series(self):
 		if self.is_new() and self.naming_series != "DONOR-.YYYY.-":
 			self.naming_series = "DONOR-.YYYY.-"
 
 	def set_trustee_reference(self):
-		if self.customer_type == "Walk-in":
+		if self.customer_type != "Refered by Trustee":
 			self.referred_by_trustee = None
 			return
 
@@ -59,35 +76,46 @@ class Donor(NestedSet):
 		if not frappe.db.get_value("Trustee", self.referred_by_trustee, "is_group"):
 			frappe.throw(frappe._("Referred By Trustee must be checked as Is Group."))
 
-	def set_donor_cnic(self):
-		if not self.donor_cnic:
+	def set_donor_phone_digits(self):
+		if self.donor_phone_number:
+			self.donor_phone_digits = normalize_phone(self.donor_phone_number) or None
+		elif not self.donor_phone_digits:
+			self.donor_phone_digits = None
+
+	def set_donor_email(self):
+		if self.donor_email:
+			self.donor_email = self.donor_email.strip().lower()
+
+	def validate_contact_details(self):
+		if not is_donor_contact_required():
 			return
 
-		self.donor_cnic = normalize_cnic(self.donor_cnic)
+		if not self.donor_phone_digits and not self.donor_email:
+			frappe.throw(frappe._("Either Donor Phone Number or Donor Email is required."))
 
-	def set_donor_phone_digits(self):
-		self.donor_phone_digits = normalize_phone(self.donor_phone_number) or None
-
-	def validate_unique_donor_cnic(self):
-		if not self.donor_cnic:
+	def validate_unique_donor_email(self):
+		if not self.donor_email:
 			return
 
 		existing_donor = frappe.db.exists(
 			"Donor",
 			{
-				"donor_cnic": self.donor_cnic,
+				"donor_email": self.donor_email,
 				"name": ["!=", self.name],
 			},
 		)
 		if existing_donor:
 			frappe.throw(
-				frappe._("Donor CNIC {0} is already used by Donor {1}.").format(
-					self.donor_cnic,
+				frappe._("Donor Email {0} is already used by Donor {1}.").format(
+					self.donor_email,
 					existing_donor,
 				)
 			)
 
 	def validate_unique_donor_phone(self):
+		if is_duplicate_donor_phone_allowed():
+			return
+
 		if not self.donor_phone_digits:
 			return
 

@@ -64,6 +64,7 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Allocated Amount",
+   "description": "Auto-filled from paid amount (capped at total program cost). Edit only when splitting across multiple programs.",
    "non_negative": 1,
    "reqd": 1
   },

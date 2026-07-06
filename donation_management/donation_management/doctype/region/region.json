@@ -2,37 +2,21 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "Name-.####",
+ "autoname": "field:region_name",
  "creation": "2026-06-04 00:00:00",
  "doctype": "DocType",
  "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
-  "master_id",
-  "title",
   "region_name",
   "disabled"
  ],
  "fields": [
   {
-   "fieldname": "master_id",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "ID",
-   "read_only": 1
-  },
-  {
-   "fieldname": "title",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Title",
-   "reqd": 1
-  },
-  {
    "fieldname": "region_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Name",
+   "label": "Region Name",
    "reqd": 1,
    "unique": 1
   },
@@ -50,7 +34,7 @@
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Region",
- "naming_rule": "Expression",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -83,5 +67,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title"
+ "title_field": "region_name"
 }

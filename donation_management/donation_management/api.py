@@ -1,37 +1,53 @@
 import re
 
 import frappe
-from frappe.utils import flt, getdate
+from frappe.utils import cint, flt, getdate
 
-from donation_management.donation_management.doctype.donor.donor import normalize_cnic, normalize_phone
+from donation_management.donation_management.doctype.donor.donor import normalize_phone
 
 
-@frappe.whitelist()
-def get_donor_by_cnic(donor_cnic=None):
-	if not donor_cnic:
-		return {}
+DONOR_FIELDS = [
+	"name",
+	"customer_name",
+	"donor_email",
+	"donor_phone_number",
+	"referred_by_trustee",
+]
 
-	cnic_digits = re.sub(r"\D", "", donor_cnic)
-	if len(cnic_digits) != 13:
-		return {"invalid": 1}
 
-	donor_cnic = normalize_cnic(cnic_digits)
-	donor = frappe.db.get_value(
-		"Donor",
-		{"donor_cnic": donor_cnic},
-		["name", "customer_name", "donor_cnic", "donor_phone_number", "referred_by_trustee"],
-		as_dict=True,
-	)
+def format_donor_response(donor):
 	if not donor:
 		return {}
 
 	return {
 		"name": donor.name,
 		"donor_name": donor.customer_name,
-		"donor_cnic": donor.donor_cnic,
+		"donor_email": donor.donor_email,
 		"donor_phone_number": donor.donor_phone_number,
 		"referred_by_trustee": donor.referred_by_trustee,
 	}
+
+
+@frappe.whitelist()
+def get_donor_by_email(donor_email=None):
+	if not donor_email:
+		return {}
+
+	donor_email = donor_email.strip().lower()
+	if "@" not in donor_email:
+		return {"invalid": 1}
+
+	donor = frappe.db.get_value("Donor", {"donor_email": donor_email}, DONOR_FIELDS, as_dict=True)
+	if not donor:
+		return {}
+
+	return format_donor_response(donor)
+
+
+@frappe.whitelist()
+def get_donor_by_cnic(donor_cnic=None):
+	# Deprecated: CNIC lookup removed for donors. Kept for backward compatibility.
+	return {}
 
 
 @frappe.whitelist()
@@ -46,19 +62,13 @@ def get_donor_by_phone(donor_phone_number=None):
 	donor = frappe.db.get_value(
 		"Donor",
 		{"donor_phone_digits": donor_phone_digits},
-		["name", "customer_name", "donor_cnic", "donor_phone_number", "referred_by_trustee"],
+		DONOR_FIELDS,
 		as_dict=True,
 	)
 	if not donor:
 		return {}
 
-	return {
-		"name": donor.name,
-		"donor_name": donor.customer_name,
-		"donor_cnic": donor.donor_cnic,
-		"donor_phone_number": donor.donor_phone_number,
-		"referred_by_trustee": donor.referred_by_trustee,
-	}
+	return format_donor_response(donor)
 
 
 @frappe.whitelist()
@@ -66,22 +76,191 @@ def get_donor_details(donor=None):
 	if not donor:
 		return {}
 
-	donor_details = frappe.db.get_value(
-		"Donor",
-		donor,
-		["name", "customer_name", "donor_cnic", "donor_phone_number", "referred_by_trustee"],
+	donor_details = frappe.db.get_value("Donor", donor, DONOR_FIELDS, as_dict=True)
+	return format_donor_response(donor_details)
+
+
+@frappe.whitelist()
+def get_donor_program_enrollments(donor=None):
+	if not donor:
+		return []
+
+	enrollments = frappe.get_all(
+		"Donor Program Enrollment",
+		filters={"donor": donor},
+		fields=[
+			"name",
+			"sponsorship_program",
+			"donation_purpose",
+			"student_quantity",
+			"last_donation_order",
+		],
+		order_by="sponsorship_program asc",
+	)
+
+	for enrollment in enrollments:
+		enrich_donor_program_enrollment(enrollment, donor)
+
+	return enrollments
+
+
+def enrich_donor_program_enrollment(enrollment, donor):
+	program_name = enrollment.sponsorship_program
+	quantity = cint(enrollment.student_quantity) or 1
+
+	program = frappe.db.get_value(
+		"Sponsorship Program",
+		program_name,
+		["monthly_donation", "duration_months", "total_program_donation"],
+		as_dict=True,
+	) or {}
+
+	monthly_donation = flt(program.get("monthly_donation"))
+	duration_months = cint(program.get("duration_months"))
+	total_program_amount = monthly_donation * duration_months * quantity
+
+	total_paid = frappe.db.sql(
+		"""
+		select ifnull(sum(dosa.allocated_amount), 0)
+		from `tabDonation Order Sponsorship Allocation` dosa
+		inner join `tabDonation Order` do on do.name = dosa.parent
+		where do.donor_name = %s
+			and do.docstatus = 1
+			and dosa.sponsorship_program = %s
+		""",
+		(donor, program_name),
+	)[0][0]
+
+	enrollment.update(
+		{
+			"program_label": program_name,
+			"purpose_label": enrollment.donation_purpose or "",
+			"monthly_donation": monthly_donation,
+			"duration_months": duration_months,
+			"total_program_amount": total_program_amount,
+			"total_paid": flt(total_paid),
+			"balance": max(total_program_amount - flt(total_paid), 0),
+		}
+	)
+
+
+@frappe.whitelist()
+def get_donor_program_donation_details(donor=None, sponsorship_program=None):
+	if not donor or not sponsorship_program:
+		frappe.throw(frappe._("Donor and Sponsorship Program are required."))
+
+	enrollment = frappe.db.get_value(
+		"Donor Program Enrollment",
+		{"donor": donor, "sponsorship_program": sponsorship_program},
+		["name", "donation_purpose", "student_quantity", "last_donation_order"],
 		as_dict=True,
 	)
-	if not donor_details:
-		return {}
+	if not enrollment:
+		frappe.throw(frappe._("Donor is not enrolled in program {0}.").format(sponsorship_program))
+
+	enrich_donor_program_enrollment(enrollment, donor)
+
+	purpose_details = []
+	sponsorship_row = {
+		"sponsorship_program": sponsorship_program,
+		"quantity": cint(enrollment.student_quantity) or 1,
+	}
+
+	last_order_name = enrollment.last_donation_order
+	if last_order_name and frappe.db.exists("Donation Order", last_order_name):
+		last_order = frappe.get_doc("Donation Order", last_order_name)
+		purpose_details = [
+			{
+				"donation_type": row.donation_type,
+				"donation_category": row.donation_category,
+				"donation_purpose": row.donation_purpose,
+				"purpose_path": row.purpose_path,
+			}
+			for row in last_order.get("purpose_details", [])
+			if row.donation_category == "Sponsorship"
+		]
+
+		for row in last_order.get("sponsorship_students", []):
+			if row.sponsorship_program == sponsorship_program:
+				sponsorship_row = {
+					"sponsorship_program": row.sponsorship_program,
+					"quantity": cint(row.quantity) or cint(enrollment.student_quantity) or 1,
+				}
+				break
+
+	if not purpose_details:
+		donation_purpose = enrollment.donation_purpose
+		if not donation_purpose:
+			frappe.throw(
+				frappe._("Donation Purpose is missing for enrollment in program {0}.").format(sponsorship_program)
+			)
+
+		donation_type = get_last_donation_type_for_program(donor, sponsorship_program)
+		purpose_path = frappe.db.get_value("Donation Purpose", donation_purpose, "purpose_path")
+		purpose_details = [
+			{
+				"donation_type": donation_type,
+				"donation_category": "Sponsorship",
+				"donation_purpose": donation_purpose,
+				"purpose_path": purpose_path,
+			}
+		]
 
 	return {
-		"name": donor_details.name,
-		"donor_name": donor_details.customer_name,
-		"donor_cnic": donor_details.donor_cnic,
-		"donor_phone_number": donor_details.donor_phone_number,
-		"referred_by_trustee": donor_details.referred_by_trustee,
+		"sponsorship_program": sponsorship_program,
+		"student_quantity": sponsorship_row["quantity"],
+		"donation_purpose": purpose_details[0].get("donation_purpose"),
+		"purpose_of_donation": "Sponsorship",
+		"donation_type": purpose_details[0].get("donation_type"),
+		"purpose_details": purpose_details,
+		"sponsorship_students": [sponsorship_row],
+		"total_program_amount": enrollment.total_program_amount,
+		"total_paid": enrollment.total_paid,
+		"balance": enrollment.balance,
 	}
+
+
+def get_last_donation_type_for_program(donor, sponsorship_program):
+	donation_type = frappe.db.sql(
+		"""
+		select do.donation_type
+		from `tabDonation Order` do
+		inner join `tabDonation Order Sponsorship Allocation` dosa on dosa.parent = do.name
+		where do.donor_name = %s
+			and dosa.sponsorship_program = %s
+			and do.docstatus = 1
+			and ifnull(do.donation_type, '') != ''
+		order by do.donation_posting_date desc, do.creation desc
+		limit 1
+		""",
+		(donor, sponsorship_program),
+	)
+	return donation_type[0][0] if donation_type else None
+
+
+@frappe.whitelist()
+def get_donor_program_quantity(donor=None, sponsorship_program=None):
+	if not donor or not sponsorship_program:
+		return 0
+
+	quantity = frappe.db.get_value(
+		"Donor Program Enrollment",
+		{"donor": donor, "sponsorship_program": sponsorship_program},
+		"student_quantity",
+	)
+	return quantity or 0
+
+
+@frappe.whitelist()
+def safe_getdoctype(doctype=None, with_parent=False, cached_timestamp=None):
+	"""Guard against client calls missing doctype (prevents Data Import list crash)."""
+	if not doctype:
+		frappe.response.docs = []
+		return
+
+	from frappe.desk.form.load import getdoctype
+
+	return getdoctype(doctype, with_parent=with_parent, cached_timestamp=cached_timestamp)
 
 
 @frappe.whitelist()
@@ -106,6 +285,47 @@ def get_student_total_donation(student_name=None, student=None, exclude_donation
 
 
 @frappe.whitelist()
+def get_donor_program_prior_allocated(donor=None, sponsorship_programs=None, exclude_donation_order=None):
+	if not donor:
+		return {}
+
+	if isinstance(sponsorship_programs, str):
+		programs = frappe.parse_json(sponsorship_programs)
+	else:
+		programs = sponsorship_programs or []
+
+	programs = [program for program in programs if program]
+	if not programs:
+		return {}
+
+	exclude_clause = ""
+	values = [donor, *programs]
+	if exclude_donation_order:
+		exclude_clause = "and do.name != %s"
+		values.append(exclude_donation_order)
+
+	placeholders = ", ".join(["%s"] * len(programs))
+	rows = frappe.db.sql(
+		f"""
+		select
+			dosa.sponsorship_program,
+			ifnull(sum(dosa.allocated_amount), 0) as prior_allocated
+		from `tabDonation Order Sponsorship Allocation` dosa
+		inner join `tabDonation Order` do on do.name = dosa.parent
+		where do.donor_name = %s
+			and do.docstatus = 1
+			and dosa.sponsorship_program in ({placeholders})
+			{exclude_clause}
+		group by dosa.sponsorship_program
+		""",
+		values,
+		as_dict=True,
+	)
+
+	return {row.sponsorship_program: flt(row.prior_allocated) for row in rows}
+
+
+@frappe.whitelist()
 def get_donor_previous_sponsorship_balance(donor=None, donation_type=None, exclude_donation_order=None):
 	if not donor or not donation_type:
 		return 0
@@ -114,7 +334,7 @@ def get_donor_previous_sponsorship_balance(donor=None, donation_type=None, exclu
 		"donor_name": donor,
 		"donation_type": donation_type,
 		"purpose_of_donation": "Sponsorship",
-		"docstatus": ["!=", 2],
+		"docstatus": 1,
 	}
 	if exclude_donation_order:
 		filters["name"] = ["!=", exclude_donation_order]

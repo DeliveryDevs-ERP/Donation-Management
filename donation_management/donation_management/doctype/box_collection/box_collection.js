@@ -3,10 +3,13 @@
 
 const denominations = [10, 20, 50, 100, 500, 1000, 5000];
 const assignment_fields = [
+	"donation_location",
 	"location_type",
 	"location_name",
 	"donor_location",
 	"contact",
+	"care_of_trustee",
+	"care_of_donor",
 	"deployment_officer",
 ];
 const always_locked_fields = [
@@ -90,25 +93,30 @@ function show_assignment_dialog(frm, title, method) {
 		title,
 		fields: [
 			{
+				fieldname: "donation_location",
+				fieldtype: "Link",
+				label: __("Donation Location"),
+				options: "Donation Location",
+				reqd: 1,
+				default: frm.doc.donation_location,
+			},
+			{
 				fieldname: "location_type",
 				fieldtype: "Select",
 				label: __("Location Type"),
-				options: "\nHome\nOffice",
-				reqd: 1,
+				options: "\nHome\nOffice\nShop\nOther",
 				default: frm.doc.location_type,
 			},
 			{
 				fieldname: "location_name",
 				fieldtype: "Data",
 				label: __("Shop/House Name"),
-				reqd: 1,
 				default: frm.doc.location_name,
 			},
 			{
 				fieldname: "donor_location",
 				fieldtype: "Data",
 				label: __("Address for Box Delivery"),
-				reqd: 1,
 				default: frm.doc.donor_location,
 			},
 			{
@@ -116,6 +124,20 @@ function show_assignment_dialog(frm, title, method) {
 				fieldtype: "Data",
 				label: __("Contact"),
 				default: frm.doc.contact,
+			},
+			{
+				fieldname: "care_of_trustee",
+				fieldtype: "Link",
+				label: __("Care Of Trustee"),
+				options: "Trustee",
+				default: frm.doc.care_of_trustee,
+			},
+			{
+				fieldname: "care_of_donor",
+				fieldtype: "Link",
+				label: __("Care Of Donor"),
+				options: "Donor",
+				default: frm.doc.care_of_donor,
 			},
 			{
 				fieldname: "deployment_officer",

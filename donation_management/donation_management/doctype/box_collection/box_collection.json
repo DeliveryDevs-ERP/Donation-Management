@@ -12,10 +12,14 @@
   "box_shape",
   "status",
   "section_break_gjgj",
+  "donation_location",
   "location_type",
   "location_name",
   "donor_location",
   "contact",
+  "care_of_section",
+  "care_of_trustee",
+  "care_of_donor",
   "column_break_guwg",
   "deployment_officer",
   "assignment_date",
@@ -85,6 +89,37 @@
    "fieldname": "section_break_gjgj",
    "fieldtype": "Section Break",
    "label": "Current Assignment"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "donation_location",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Donation Location",
+   "options": "Donation Location",
+   "reqd": 0
+  },
+  {
+   "fieldname": "care_of_section",
+   "fieldtype": "Section Break",
+   "label": "Care Of (Optional)"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Trustee in whose care the box is placed",
+   "fieldname": "care_of_trustee",
+   "fieldtype": "Link",
+   "label": "Care Of Trustee",
+   "options": "Trustee"
+  },
+  {
+   "allow_on_submit": 1,
+   "description": "Donor in whose care the box is placed",
+   "fieldname": "care_of_donor",
+   "fieldtype": "Link",
+   "label": "Care Of Donor",
+   "options": "Donor"
   },
   {
    "fieldname": "column_break_guwg",
