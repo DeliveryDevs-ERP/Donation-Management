@@ -199,7 +199,7 @@
   },
   {
    "fieldname": "donor_phone_number",
-   "fieldtype": "Data",
+   "fieldtype": "Phone",
    "in_global_search": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -706,7 +706,7 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-07-01 04:11:10.901585",
+ "modified": "2026-07-06 18:08:43.881267",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Donor",

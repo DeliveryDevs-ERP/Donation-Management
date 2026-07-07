@@ -27,7 +27,6 @@ class DonationClosing(Document):
 		self.db_set("status", self.status, update_modified=False)
 		if self.journal_entry:
 			self.cancel_bank_journal_entry()
-		self.reset_source_deposit_status()
 
 	def set_company_default(self):
 		if not self.company:
@@ -84,7 +83,7 @@ class DonationClosing(Document):
 			return {
 				"count": 0,
 				"total_amount": 0,
-				"message": frappe._(
+				"message": _(
 					"No pending cash donations were found for {0}. "
 					"Cash Donation Orders must be submitted with Posted accounting and "
 					"Bank Deposit Status Pending Bank Deposit. Box Collections must be Collected "
@@ -141,20 +140,6 @@ class DonationClosing(Document):
 					update_modified=False,
 				)
 
-	def reset_source_deposit_status(self):
-		for row in self.closing_details or []:
-			if row.source_doctype != "Donation Order":
-				continue
-
-			if frappe.db.get_value("Donation Order", row.source_name, "bank_deposit_status") == "Deposited":
-				frappe.db.set_value(
-					"Donation Order",
-					row.source_name,
-					"bank_deposit_status",
-					"Pending Bank Deposit",
-					update_modified=False,
-				)
-
 	def validate_bank_account(self):
 		account_details = frappe.db.get_value(
 			"Account",
@@ -173,11 +158,7 @@ class DonationClosing(Document):
 
 	def create_bank_journal_entry(self):
 		if self.journal_entry and frappe.db.exists("Journal Entry", self.journal_entry):
-			if frappe.db.get_value("Journal Entry", self.journal_entry, "docstatus") == 1:
-				return
-			frappe.throw(
-				frappe._("Linked Journal Entry {0} is not submitted.").format(self.journal_entry)
-			)
+			return
 
 		cash_account = get_default_cash_account(self.company)
 		if not cash_account:
@@ -224,8 +205,8 @@ class DonationClosing(Document):
 		je = frappe.get_doc("Journal Entry", self.journal_entry)
 		if je.docstatus == 1:
 			je.cancel()
+		self.journal_entry = None
 		self.accounting_status = "Cancelled"
-		self.db_set("accounting_status", self.accounting_status, update_modified=False)
 
 	def notify_finance_team(self):
 		recipients = get_finance_notification_recipients()
@@ -326,56 +307,30 @@ def get_pending_donation_orders(company, exclude_closing=None):
 
 
 def get_pending_box_collections(company, exclude_closing=None):
-	collections = frappe.db.sql(
-		"""
-		select
-			collection_log.name,
-			collection_log.box_collection,
-			collection_log.collected_amount,
-			collection_log.donation_head,
-			collection_log.action_date,
-			collection_log.journal_entry
-		from `tabBox Collection Log` collection_log
-		inner join `tabBox Collection` box_collection
-			on box_collection.name = collection_log.box_collection
-		inner join `tabJournal Entry` journal_entry
-			on journal_entry.name = collection_log.journal_entry
-			and journal_entry.docstatus = 1
-		where box_collection.docstatus = 1
-			and box_collection.company = %(company)s
-			and collection_log.action = 'Collection'
-			and ifnull(collection_log.collected_amount, 0) > 0
-			and not exists (
-				select 1
-				from `tabBox Collection Log` newer_log
-				where newer_log.box_collection = collection_log.box_collection
-					and newer_log.action = 'Collection'
-					and (
-						newer_log.action_date > collection_log.action_date
-						or (
-							newer_log.action_date = collection_log.action_date
-							and newer_log.creation > collection_log.creation
-						)
-					)
-			)
-		order by collection_log.action_date asc, collection_log.creation asc
-		""",
-		{"company": company},
-		as_dict=True,
+	collections = frappe.get_all(
+		"Box Collection",
+		filters={
+			"docstatus": 1,
+			"status": "Collected",
+			"company": company,
+			"accounting_status": "Posted",
+		},
+		fields=["name", "collected_amount", "donation_head", "collection_date"],
+		order_by="collection_date asc",
 	)
 
 	result = []
 	for collection in collections:
-		if is_source_in_active_closing("Box Collection Log", collection.name, exclude=exclude_closing):
+		if is_source_in_active_closing("Box Collection", collection.name, exclude=exclude_closing):
 			continue
 		result.append(
 			{
-				"source_doctype": "Box Collection Log",
+				"source_doctype": "Box Collection",
 				"source_name": collection.name,
 				"donation_type": collection.donation_head,
 				"amount": collection.collected_amount,
-				"posting_date": getdate(collection.action_date),
-				"remarks": "{0} | {1}".format(collection.box_collection, collection.name),
+				"posting_date": collection.collection_date,
+				"remarks": collection.name,
 			}
 		)
 	return result

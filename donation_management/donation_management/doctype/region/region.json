@@ -2,7 +2,7 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:region_name",
+ "autoname": "City-.###",
  "creation": "2026-06-04 00:00:00",
  "doctype": "DocType",
  "document_type": "Setup",
@@ -30,11 +30,11 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-04 00:00:00",
+ "modified": "2026-07-06 17:42:06.639868",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Region",
- "naming_rule": "By fieldname",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
