@@ -31,7 +31,6 @@ frappe.ui.form.on("Donor", {
 	refresh(frm) {
 		toggle_donor_reference_fields(frm);
 		toggle_donor_contact_requirement(frm);
-		add_donor_tree_button(frm);
 		add_donor_ledger_buttons(frm);
 	},
 
@@ -69,14 +68,6 @@ function toggle_donor_contact_requirement(frm) {
 
 		frm.set_intro(messages.join(" "), cint(settings.allow_donor_without_phone_or_email) ? "blue" : "yellow");
 	});
-}
-
-function add_donor_tree_button(frm) {
-	frm.add_custom_button(
-		__("Donations Tree"),
-		() => frappe.set_route("Tree", "Donor"),
-		__("Tree Views")
-	);
 }
 
 function add_donor_ledger_buttons(frm) {

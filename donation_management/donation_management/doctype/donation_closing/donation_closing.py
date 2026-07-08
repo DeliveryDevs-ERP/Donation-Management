@@ -11,8 +11,13 @@ from donation_management.donation_management.api import get_default_cash_account
 class DonationClosing(Document):
 	def validate(self):
 		self.set_company_default()
+		self.set_prepared_by()
 		self.set_totals()
 		self.validate_closing_details()
+
+	def set_prepared_by(self):
+		if not self.prepared_by:
+			self.prepared_by = frappe.session.user
 
 	def on_submit(self):
 		if not self.closing_details:
@@ -58,7 +63,15 @@ class DonationClosing(Document):
 	@frappe.whitelist()
 	def fetch_pending_cash_donations(self):
 		self.set_company_default()
-		pending = get_pending_cash_donations(self.company, exclude_closing=self.name)
+		if not self.closing_date:
+			frappe.throw(frappe._("Closing Date is required before fetching pending cash donations."))
+
+		closing_date = getdate(self.closing_date)
+		pending = get_pending_cash_donations(
+			self.company,
+			closing_date=closing_date,
+			exclude_closing=self.name,
+		)
 		self.closing_details = []
 
 		for item in pending:
@@ -84,12 +97,7 @@ class DonationClosing(Document):
 			return {
 				"count": 0,
 				"total_amount": 0,
-				"message": frappe._(
-					"No pending cash donations were found for {0}. "
-					"Cash Donation Orders must be submitted with Posted accounting and "
-					"Bank Deposit Status Pending Bank Deposit. Box Collections must be Collected "
-					"and Coupon Books must be Returned/Closed with Posted accounting."
-				).format(self.company),
+				"message": frappe._("No pending cash donations were found."),
 			}
 
 		self.save()
@@ -273,24 +281,29 @@ def get_closing_details_payload(doc):
 	]
 
 
-def get_pending_cash_donations(company=None, exclude_closing=None):
+def get_pending_cash_donations(company=None, closing_date=None, exclude_closing=None):
 	company = company or get_default_company()
+	closing_date = getdate(closing_date) if closing_date else None
 	pending = []
-	pending.extend(get_pending_donation_orders(company, exclude_closing))
-	pending.extend(get_pending_box_collections(company, exclude_closing))
-	pending.extend(get_pending_coupon_books(company, exclude_closing))
+	pending.extend(get_pending_donation_orders(company, closing_date, exclude_closing))
+	pending.extend(get_pending_box_collections(company, closing_date, exclude_closing))
+	pending.extend(get_pending_coupon_books(company, closing_date, exclude_closing))
 	return pending
 
 
-def get_pending_donation_orders(company, exclude_closing=None):
+def get_pending_donation_orders(company, closing_date=None, exclude_closing=None):
+	filters = {
+		"docstatus": 1,
+		"company": company,
+		"mode_of_payment_type": "Cash",
+		"accounting_status": "Posted",
+	}
+	if closing_date:
+		filters["donation_posting_date"] = closing_date
+
 	orders = frappe.get_all(
 		"Donation Order",
-		filters={
-			"docstatus": 1,
-			"company": company,
-			"mode_of_payment_type": "Cash",
-			"accounting_status": "Posted",
-		},
+		filters=filters,
 		fields=[
 			"name",
 			"donation_amount",
@@ -325,7 +338,7 @@ def get_pending_donation_orders(company, exclude_closing=None):
 	return result
 
 
-def get_pending_box_collections(company, exclude_closing=None):
+def get_pending_box_collections(company, closing_date=None, exclude_closing=None):
 	collections = frappe.db.sql(
 		"""
 		select
@@ -344,6 +357,7 @@ def get_pending_box_collections(company, exclude_closing=None):
 		where box_collection.docstatus = 1
 			and box_collection.company = %(company)s
 			and collection_log.action = 'Collection'
+			and (%(closing_date)s is null or date(collection_log.action_date) = %(closing_date)s)
 			and ifnull(collection_log.collected_amount, 0) > 0
 			and not exists (
 				select 1
@@ -360,7 +374,7 @@ def get_pending_box_collections(company, exclude_closing=None):
 			)
 		order by collection_log.action_date asc, collection_log.creation asc
 		""",
-		{"company": company},
+		{"company": company, "closing_date": closing_date},
 		as_dict=True,
 	)
 
@@ -381,16 +395,26 @@ def get_pending_box_collections(company, exclude_closing=None):
 	return result
 
 
-def get_pending_coupon_books(company, exclude_closing=None):
-	books = frappe.get_all(
-		"Coupon Book",
-		filters={
-			"status": ["in", ["Returned", "Closed"]],
-			"company": company,
-			"accounting_status": "Posted",
-		},
-		fields=["name", "collected_amount", "coupon_type", "start_date"],
-		order_by="start_date asc",
+def get_pending_coupon_books(company, closing_date=None, exclude_closing=None):
+	books = frappe.db.sql(
+		"""
+		select
+			coupon_book.name,
+			coupon_book.collected_amount,
+			coupon_book.coupon_type,
+			journal_entry.posting_date
+		from `tabCoupon Book` coupon_book
+		inner join `tabJournal Entry` journal_entry
+			on journal_entry.name = coupon_book.journal_entry
+			and journal_entry.docstatus = 1
+		where coupon_book.status in ('Returned', 'Closed')
+			and coupon_book.company = %(company)s
+			and coupon_book.accounting_status = 'Posted'
+			and (%(closing_date)s is null or journal_entry.posting_date = %(closing_date)s)
+		order by journal_entry.posting_date asc, coupon_book.creation asc
+		""",
+		{"company": company, "closing_date": closing_date},
+		as_dict=True,
 	)
 
 	result = []
@@ -403,7 +427,7 @@ def get_pending_coupon_books(company, exclude_closing=None):
 				"source_name": book.name,
 				"donation_type": book.coupon_type,
 				"amount": book.collected_amount,
-				"posting_date": book.start_date,
+				"posting_date": book.posting_date,
 				"remarks": book.name,
 			}
 		)

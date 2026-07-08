@@ -7,6 +7,14 @@ from frappe.utils import cint
 
 
 class DonorProgramEnrollment(Document):
+	def before_insert(self):
+		if not self.flags.from_donation_order:
+			frappe.throw(
+				frappe._(
+					"Donor Program Enrollment is created automatically from submitted Donation Orders."
+				)
+			)
+
 	def validate(self):
 		self.student_quantity = max(cint(self.student_quantity), 1)
 
@@ -41,5 +49,6 @@ def upsert_donor_program_enrollment(donor, sponsorship_program, student_quantity
 			"last_donation_order": donation_order,
 		}
 	)
+	doc.flags.from_donation_order = True
 	doc.insert(ignore_permissions=True)
 	return doc.name

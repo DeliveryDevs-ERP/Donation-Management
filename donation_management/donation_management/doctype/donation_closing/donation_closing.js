@@ -45,6 +45,10 @@ function fetch_pending(frm) {
 		frappe.msgprint(__("Company is required before fetching pending cash donations."));
 		return;
 	}
+	if (!frm.doc.closing_date) {
+		frappe.msgprint(__("Closing Date is required before fetching pending cash donations."));
+		return;
+	}
 
 	frappe.call({
 		doc: frm.doc,
