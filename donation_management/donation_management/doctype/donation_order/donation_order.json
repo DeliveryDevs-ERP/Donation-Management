@@ -11,8 +11,8 @@
   "donor_email",
   "donor_cnic",
   "donor_name",
-  "donor_program_enrollments_html",
   "referred_by_trustee",
+  "donor_program_enrollments_html",
   "donor_column_break",
   "name_on_donation_slip",
   "donation_posting_date",
@@ -145,10 +145,10 @@
   },
   {
    "fieldname": "location",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Location",
-   "options": "\nShop\nHead Office\nLahore"
+   "options": "Location Type"
   },
   {
    "fieldname": "company",
@@ -551,7 +551,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-07-01 05:28:19.268806",
+ "modified": "2026-07-09 17:33:25.635252",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Donation Order",

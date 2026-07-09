@@ -12,11 +12,6 @@ from donation_management.donation_management.doctype.donation_settings.donation_
 	is_duplicate_donor_phone_allowed,
 )
 
-from donation_management.donation_management.doctype.donation_settings.donation_settings import (
-	is_donor_contact_required,
-	is_duplicate_donor_phone_allowed,
-)
-
 
 VALID_DONOR_TYPES = (
 	"Walk-in",

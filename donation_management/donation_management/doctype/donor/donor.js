@@ -70,60 +70,6 @@ function toggle_donor_contact_requirement(frm) {
 	});
 }
 
-function toggle_donor_contact_requirement(frm) {
-	frappe.db.get_doc("Donation Settings", "Donation Settings").then((settings) => {
-		const messages = [];
-
-		if (cint(settings.allow_donor_without_phone_or_email)) {
-			messages.push(__("Phone or Email is optional as per Donation Settings."));
-		} else {
-			messages.push(__("Either Donor Phone Number or Donor Email is required."));
-		}
-
-		if (cint(settings.allow_duplicate_donor_phone)) {
-			messages.push(__("Duplicate phone numbers are allowed."));
-		}
-
-		frm.set_intro(messages.join(" "), cint(settings.allow_donor_without_phone_or_email) ? "blue" : "yellow");
-	});
-}
-
-function add_donor_ledger_buttons(frm) {
-	if (frm.is_new()) {
-		return;
-	}
-
-	const ledger_group = __("Ledger");
-
-	frm.add_custom_button(
-		__("Donation History"),
-		() => frappe.set_route("List", "Donation Order", { donor_name: frm.doc.name }),
-		ledger_group
-	);
-
-	frm.add_custom_button(
-		__("Donation Statement"),
-		() => frappe.set_route("query-report", "Donor Donation Statement", { donor: frm.doc.name }),
-		ledger_group
-	);
-
-	frm.add_custom_button(
-		__("Balance Summary"),
-		() => frappe.set_route("query-report", "Donor Balance Report", { donor: frm.doc.name }),
-		ledger_group
-	);
-
-	frm.add_custom_button(
-		__("General Ledger"),
-		() =>
-			frappe.set_route("query-report", "General Ledger", {
-				party_type: "Donor",
-				party: frm.doc.name,
-			}),
-		ledger_group
-	);
-}
-
 function add_donor_ledger_buttons(frm) {
 	if (frm.is_new()) {
 		return;
