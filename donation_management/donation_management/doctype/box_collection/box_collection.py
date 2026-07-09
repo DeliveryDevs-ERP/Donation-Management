@@ -26,6 +26,7 @@ class BoxCollection(Document):
 
 	def validate(self):
 		self.set_box_details()
+		self.populate_location_from_master()
 		self.validate_single_collection_per_box()
 		self.validate_status_change_uses_action()
 		self.validate_issued_fields_are_locked()
@@ -87,6 +88,7 @@ class BoxCollection(Document):
 			("location_name", "Shop/House Name"),
 			("donor_location", "Address for Box Delivery"),
 			("contact", "Contact"),
+			("contact_number", "Contact Number"),
 			("care_of_trustee", "Care Of Trustee"),
 			("care_of_donor", "Care Of Donor"),
 			("deployment_officer", "Delivery Staff"),
@@ -114,6 +116,7 @@ class BoxCollection(Document):
 		location_name=None,
 		donor_location=None,
 		contact=None,
+		contact_number=None,
 		care_of_trustee=None,
 		care_of_donor=None,
 		deployment_officer=None,
@@ -125,6 +128,7 @@ class BoxCollection(Document):
 			location_name=location_name,
 			donor_location=donor_location,
 			contact=contact,
+			contact_number=contact_number,
 			care_of_trustee=care_of_trustee,
 			care_of_donor=care_of_donor,
 			deployment_officer=deployment_officer,
@@ -139,6 +143,7 @@ class BoxCollection(Document):
 		location_name=None,
 		donor_location=None,
 		contact=None,
+		contact_number=None,
 		care_of_trustee=None,
 		care_of_donor=None,
 		deployment_officer=None,
@@ -150,6 +155,7 @@ class BoxCollection(Document):
 			location_name=location_name,
 			donor_location=donor_location,
 			contact=contact,
+			contact_number=contact_number,
 			care_of_trustee=care_of_trustee,
 			care_of_donor=care_of_donor,
 			deployment_officer=deployment_officer,
@@ -164,6 +170,7 @@ class BoxCollection(Document):
 		location_name=None,
 		donor_location=None,
 		contact=None,
+		contact_number=None,
 		care_of_trustee=None,
 		care_of_donor=None,
 		deployment_officer=None,
@@ -181,11 +188,12 @@ class BoxCollection(Document):
 		self.location_name = location_name or self.location_name
 		self.donor_location = donor_location or self.donor_location
 		self.contact = contact or self.contact
+		self.contact_number = contact_number or self.contact_number
 		self.care_of_trustee = care_of_trustee or self.care_of_trustee
 		self.care_of_donor = care_of_donor or self.care_of_donor
 		self.deployment_officer = deployment_officer or self.deployment_officer
 
-		self.populate_location_from_master()
+		self.populate_location_from_master(force=True)
 
 		self.validate_assignment_details()
 		self.status = "Issued"
@@ -275,27 +283,27 @@ class BoxCollection(Document):
 		if missing_fields:
 			frappe.throw(frappe._("Missing assignment details: {0}").format(", ".join(missing_fields)))
 
-	def populate_location_from_master(self):
+	def populate_location_from_master(self, force=False):
 		if not self.donation_location:
+			return
+
+		if not force and not (self.is_new() or self.has_value_changed("donation_location")):
 			return
 
 		location = frappe.db.get_value(
 			"Donation Location",
 			self.donation_location,
-			["location_name", "location_type", "address", "contact"],
+			["location_type", "contact", "contact_person", "shophouse_name", "address"],
 			as_dict=True,
 		)
 		if not location:
 			return
 
-		if not self.location_name:
-			self.location_name = location.location_name
-		if not self.location_type:
-			self.location_type = location.location_type
-		if not self.donor_location:
-			self.donor_location = location.address
-		if not self.contact:
-			self.contact = location.contact
+		self.location_type = location.location_type
+		self.contact_number = location.contact
+		self.contact = location.contact_person
+		self.location_name = location.shophouse_name
+		self.donor_location = location.address
 
 	def get_denomination_rows(self, denominations):
 		denominations = frappe.parse_json(denominations) if isinstance(denominations, str) else denominations

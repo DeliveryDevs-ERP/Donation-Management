@@ -1,25 +1,28 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-07-08 18:20:06.668617",
+ "autoname": "LOC-.#####",
+ "creation": "2026-07-09 14:11:31.129354",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "section_break_toys"
+  "location"
  ],
  "fields": [
   {
-   "fieldname": "section_break_toys",
-   "fieldtype": "Section Break"
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-08 18:20:06.668617",
+ "modified": "2026-07-09 14:13:14.828140",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Location Type",
+ "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -37,7 +40,9 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "location"
 }

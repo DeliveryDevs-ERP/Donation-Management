@@ -15,6 +15,7 @@
   "customer_name",
   "donor_phone_number",
   "donor_email",
+  "is_group",
   "column_break0",
   "territory",
   "gender",
@@ -95,8 +96,7 @@
   "portal_users_tab",
   "portal_users",
   "salutation",
-  "customer_group",
-  "is_group"
+  "customer_group"
  ],
  "fields": [
   {
@@ -666,6 +666,8 @@
    "default": "0",
    "fieldname": "is_group",
    "fieldtype": "Check",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Is Group"
   },
   {
@@ -812,6 +814,7 @@
  "row_format": "Dynamic",
  "search_fields": "customer_name,donor_phone_number,donor_email,mobile_no,territory",
  "show_name_in_global_search": 1,
+ "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

@@ -96,9 +96,9 @@
   },
   {
    "fieldname": "location_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Location Type",
-   "options": "\nHome\nOffice"
+   "options": "Location Type"
   },
   {
    "fieldname": "location_name",

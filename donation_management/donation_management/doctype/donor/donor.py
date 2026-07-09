@@ -21,10 +21,18 @@ VALID_DONOR_TYPES = (
 	"General Donor",
 	"Sub Key Donor",
 )
-DONOR_BRANCH = "Branch:Donor"
+GROUP_DONOR_TYPES = ("General Donor", "Key Donor", "Sub Key Donor")
 TRUSTEE_BRANCH = "Branch:Refered by Trustee"
+DONOR_TYPE_BRANCH_PREFIX = "Branch:Donor Type:"
 DONOR_NODE_PREFIX = "Donor:"
 TRUSTEE_NODE_PREFIX = "Trustee:"
+DONOR_TREE_BRANCH_TYPES = (
+	"Walk-in",
+	"General Donor",
+	"Key Donor",
+	"Sub General Donor",
+	"Sub Key Donor",
+)
 
 
 class Donor(NestedSet):
@@ -33,12 +41,14 @@ class Donor(NestedSet):
 	def validate(self):
 		self.set_naming_series()
 		self.set_donor_type()
+		self.set_group_for_donor_type()
 		self.set_trustee_reference()
 		self.validate_parent_donor()
 		self.set_donor_phone_digits()
 		self.set_donor_email()
 		self.validate_contact_details()
 		self.validate_unique_donor_phone()
+		self.validate_phone_not_used_by_trustee()
 		self.validate_unique_donor_email()
 
 	def on_update(self):
@@ -51,6 +61,10 @@ class Donor(NestedSet):
 					", ".join(VALID_DONOR_TYPES)
 				)
 			)
+
+	def set_group_for_donor_type(self):
+		if self.customer_type in GROUP_DONOR_TYPES:
+			self.is_group = 1
 
 	def set_naming_series(self):
 		if self.is_new() and self.naming_series != "DONOR-.YYYY.-":
@@ -134,6 +148,19 @@ class Donor(NestedSet):
 				)
 			)
 
+	def validate_phone_not_used_by_trustee(self):
+		if not self.donor_phone_digits:
+			return
+
+		existing_trustee = find_trustee_by_phone_digits(self.donor_phone_digits)
+		if existing_trustee:
+			frappe.throw(
+				frappe._("Donor Phone Number {0} is already used by Trustee {1}.").format(
+					self.donor_phone_number,
+					existing_trustee,
+				)
+			)
+
 	def validate_parent_donor(self):
 		if not self.parent_donor:
 			return
@@ -167,29 +194,54 @@ def normalize_phone(phone_number):
 	return re.sub(r"\D", "", phone_number or "")
 
 
+def find_trustee_by_phone_digits(phone_digits, exclude=None):
+	if not phone_digits or not frappe.db.table_exists("Trustee"):
+		return None
+
+	trustee_meta = frappe.get_meta("Trustee")
+	if trustee_meta.has_field("contact_digits"):
+		existing_trustee = frappe.db.exists(
+			"Trustee",
+			{
+				"contact_digits": phone_digits,
+				"name": ["!=", exclude or ""],
+			},
+		)
+		if existing_trustee:
+			return existing_trustee
+
+	for trustee in frappe.get_all(
+		"Trustee",
+		filters={"name": ["!=", exclude or ""]},
+		fields=["name", "contact"],
+	):
+		if normalize_phone(trustee.contact) == phone_digits:
+			return trustee.name
+
+	return None
+
+
 @frappe.whitelist()
 def get_referral_tree_children(doctype, parent=None, **kwargs):
 	frappe.has_permission("Donor", "read", throw=True)
 	frappe.has_permission("Trustee", "read", throw=True)
 
 	if not parent or parent == "Donations":
-		return [
-			{
-				"value": DONOR_BRANCH,
-				"title": frappe._("Donor"),
-				"expandable": _has_donor_branch_nodes(),
-				"hide_open": True,
-			},
+		nodes = [_get_donor_type_branch_node(donor_type) for donor_type in DONOR_TREE_BRANCH_TYPES]
+		nodes.insert(
+			1,
 			{
 				"value": TRUSTEE_BRANCH,
 				"title": frappe._("Refered by Trustee"),
 				"expandable": _has_trustee_branch_nodes(),
 				"hide_open": True,
 			},
-		]
+		)
+		return nodes
 
-	if parent == DONOR_BRANCH:
-		return _get_donor_nodes([["ifnull(parent_donor, '')", "=", ""], ["ifnull(referred_by_trustee, '')", "=", ""]])
+	if parent.startswith(DONOR_TYPE_BRANCH_PREFIX):
+		donor_type = parent[len(DONOR_TYPE_BRANCH_PREFIX) :]
+		return _get_top_level_donor_nodes(donor_type)
 
 	if parent == TRUSTEE_BRANCH:
 		return _get_top_level_trustee_nodes()
@@ -203,10 +255,23 @@ def get_referral_tree_children(doctype, parent=None, **kwargs):
 	return []
 
 
-def _has_donor_branch_nodes():
+def _get_donor_type_branch_node(donor_type):
+	return {
+		"value": f"{DONOR_TYPE_BRANCH_PREFIX}{donor_type}",
+		"title": frappe._(donor_type),
+		"expandable": _has_donor_branch_nodes(donor_type),
+		"hide_open": True,
+	}
+
+
+def _has_donor_branch_nodes(donor_type):
 	return _exists(
 		"Donor",
-		[["ifnull(parent_donor, '')", "=", ""], ["ifnull(referred_by_trustee, '')", "=", ""]],
+		[
+			["customer_type", "=", donor_type],
+			["ifnull(parent_donor, '')", "=", ""],
+			["ifnull(referred_by_trustee, '')", "=", ""],
+		],
 	)
 
 
@@ -216,6 +281,16 @@ def _has_trustee_branch_nodes():
 
 def _get_child_donor_nodes(parent_donor):
 	return _get_donor_nodes([["parent_donor", "=", parent_donor], ["ifnull(referred_by_trustee, '')", "=", ""]])
+
+
+def _get_top_level_donor_nodes(donor_type):
+	return _get_donor_nodes(
+		[
+			["customer_type", "=", donor_type],
+			["ifnull(parent_donor, '')", "=", ""],
+			["ifnull(referred_by_trustee, '')", "=", ""],
+		]
+	)
 
 
 def _get_donor_nodes(filters):

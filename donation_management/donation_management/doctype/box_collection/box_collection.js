@@ -8,6 +8,7 @@ const assignment_fields = [
 	"location_name",
 	"donor_location",
 	"contact",
+	"contact_number",
 	"care_of_trustee",
 	"care_of_donor",
 	"deployment_officer",
@@ -75,6 +76,10 @@ frappe.ui.form.on("Box Collection", {
 			frm.add_custom_button(__("Collection"), () => show_collection_dialog(frm), __("Actions"));
 		}
 	},
+
+	donation_location(frm) {
+		set_location_details_from_master(frm);
+	},
 });
 
 function set_field_locks(frm) {
@@ -89,7 +94,8 @@ function set_field_locks(frm) {
 }
 
 function show_assignment_dialog(frm, title, method) {
-	const dialog = new frappe.ui.Dialog({
+	let dialog;
+	dialog = new frappe.ui.Dialog({
 		title,
 		fields: [
 			{
@@ -99,12 +105,13 @@ function show_assignment_dialog(frm, title, method) {
 				options: "Donation Location",
 				reqd: 1,
 				default: frm.doc.donation_location,
+				onchange: () => set_dialog_location_details(dialog),
 			},
 			{
 				fieldname: "location_type",
-				fieldtype: "Select",
+				fieldtype: "Link",
 				label: __("Location Type"),
-				options: "\nHome\nOffice\nShop\nOther",
+				options: "Location Type",
 				default: frm.doc.location_type,
 			},
 			{
@@ -124,6 +131,12 @@ function show_assignment_dialog(frm, title, method) {
 				fieldtype: "Data",
 				label: __("Contact"),
 				default: frm.doc.contact,
+			},
+			{
+				fieldname: "contact_number",
+				fieldtype: "Phone",
+				label: __("Contact Number"),
+				default: frm.doc.contact_number,
 			},
 			{
 				fieldname: "care_of_trustee",
@@ -157,6 +170,61 @@ function show_assignment_dialog(frm, title, method) {
 	});
 
 	dialog.show();
+}
+
+function set_location_details_from_master(frm) {
+	if (!frm.doc.donation_location) {
+		["location_type", "location_name", "donor_location", "contact", "contact_number"].forEach(
+			(fieldname) => frm.set_value(fieldname, "")
+		);
+		return;
+	}
+
+	frappe.db
+		.get_value("Donation Location", frm.doc.donation_location, [
+			"location_type",
+			"contact",
+			"contact_person",
+			"shophouse_name",
+			"address",
+		])
+		.then((response) => {
+			const location = response.message || {};
+			frm.set_value({
+				location_type: location.location_type || "",
+				contact_number: location.contact || "",
+				contact: location.contact_person || "",
+				location_name: location.shophouse_name || "",
+				donor_location: location.address || "",
+			});
+		});
+}
+
+function set_dialog_location_details(dialog) {
+	const donation_location = dialog.get_value("donation_location");
+	if (!donation_location) {
+		["location_type", "location_name", "donor_location", "contact", "contact_number"].forEach(
+			(fieldname) => dialog.set_value(fieldname, "")
+		);
+		return;
+	}
+
+	frappe.db
+		.get_value("Donation Location", donation_location, [
+			"location_type",
+			"contact",
+			"contact_person",
+			"shophouse_name",
+			"address",
+		])
+		.then((response) => {
+			const location = response.message || {};
+			dialog.set_value("location_type", location.location_type || "");
+			dialog.set_value("contact_number", location.contact || "");
+			dialog.set_value("contact", location.contact_person || "");
+			dialog.set_value("location_name", location.shophouse_name || "");
+			dialog.set_value("donor_location", location.address || "");
+		});
 }
 
 function show_collection_dialog(frm) {

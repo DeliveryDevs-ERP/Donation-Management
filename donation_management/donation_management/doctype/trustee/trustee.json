@@ -24,6 +24,7 @@
   "remarks",
   "contact_info_section",
   "contact",
+  "contact_digits",
   "address"
  ],
  "fields": [
@@ -91,6 +92,13 @@
    "fieldtype": "Phone",
    "label": "Contact",
    "reqd": 1
+  },
+  {
+   "fieldname": "contact_digits",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Contact Digits",
+   "read_only": 1
   },
   {
    "fieldname": "address",

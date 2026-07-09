@@ -6,6 +6,13 @@ frappe.treeview_settings["Donor"] = {
 	disable_add_node: true,
 	get_tree_nodes:
 		"donation_management.donation_management.doctype.donor.donor.get_referral_tree_children",
+	onload(treeview) {
+		frappe.treeview_settings["Donor"].treeview = treeview;
+		treeview.make_tree();
+	},
+	post_render(treeview) {
+		frappe.treeview_settings["Donor"].treeview = treeview;
+	},
 	get_label(node) {
 		return __(node.title || node.label);
 	},

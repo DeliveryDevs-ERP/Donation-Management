@@ -7,16 +7,19 @@
  "engine": "InnoDB",
  "field_order": [
   "box_number",
+  "status",
+  "column_break_zbat",
   "box_code",
   "donation_head",
   "box_shape",
-  "status",
   "section_break_gjgj",
   "donation_location",
   "location_type",
   "location_name",
-  "donor_location",
+  "column_break_jdck",
   "contact",
+  "contact_number",
+  "donor_location",
   "care_of_section",
   "care_of_trustee",
   "care_of_donor",
@@ -97,8 +100,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Donation Location",
-   "options": "Donation Location",
-   "reqd": 0
+   "options": "Donation Location"
   },
   {
    "fieldname": "care_of_section",
@@ -170,15 +172,15 @@
   {
    "allow_on_submit": 1,
    "fieldname": "donor_location",
-   "fieldtype": "Data",
+   "fieldtype": "Long Text",
    "label": "Address for Box Delivery"
   },
   {
    "allow_on_submit": 1,
    "fieldname": "location_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Location Type",
-   "options": "\nHome\nOffice"
+   "options": "Location Type"
   },
   {
    "allow_on_submit": 1,
@@ -190,7 +192,7 @@
    "allow_on_submit": 1,
    "fieldname": "contact",
    "fieldtype": "Data",
-   "label": "Contact"
+   "label": "Contact Person"
   },
   {
    "allow_on_submit": 1,
@@ -271,13 +273,27 @@
    "label": "Accounting Status",
    "options": "\nNot Posted\nPosted\nCancelled",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_zbat",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "contact_number",
+   "fieldtype": "Phone",
+   "label": "Contact Number"
+  },
+  {
+   "fieldname": "column_break_jdck",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-29 18:06:13.613420",
+ "modified": "2026-07-09 14:21:38.339839",
  "modified_by": "Administrator",
  "module": "Donation Management",
  "name": "Box Collection",
