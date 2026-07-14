@@ -9,6 +9,10 @@ const donor_types = [
 	"General Donor",
 	"Sub Key Donor",
 ];
+const mohasil_employee_filters = {
+	status: "Active",
+	designation: "Mohasil",
+};
 
 frappe.ui.form.on("Donor", {
 	setup(frm) {
@@ -25,6 +29,10 @@ frappe.ui.form.on("Donor", {
 			filters: {
 				is_group: 1,
 			},
+		}));
+
+		frm.set_query("mohasil", () => ({
+			filters: mohasil_employee_filters,
 		}));
 	},
 

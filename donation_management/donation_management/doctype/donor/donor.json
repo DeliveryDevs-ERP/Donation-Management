@@ -15,6 +15,7 @@
   "customer_name",
   "donor_phone_number",
   "donor_email",
+  "mohasil",
   "is_group",
   "column_break0",
   "territory",
@@ -142,6 +143,12 @@
    "in_standard_filter": 1,
    "label": "Donor Email",
    "options": "Email"
+  },
+  {
+   "fieldname": "mohasil",
+   "fieldtype": "Link",
+   "label": "Mohasil",
+   "options": "Employee"
   },
   {
    "fieldname": "donor_cnic",

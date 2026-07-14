@@ -2,6 +2,10 @@
 // For license information, please see license.txt
 
 const denominations = [10, 20, 50, 100, 500, 1000, 5000];
+const mohasil_employee_filters = {
+	status: "Active",
+	designation: "Mohasil",
+};
 const assignment_fields = [
 	"donation_location",
 	"location_type",
@@ -57,6 +61,14 @@ frappe.ui.form.on("Box Collection", {
 			}
 			return { filters };
 		});
+
+		frm.set_query("deployment_officer", () => ({
+			filters: mohasil_employee_filters,
+		}));
+
+		frm.set_query("collection_office", () => ({
+			filters: mohasil_employee_filters,
+		}));
 	},
 
 	refresh(frm) {
@@ -154,10 +166,14 @@ function show_assignment_dialog(frm, title, method) {
 			},
 			{
 				fieldname: "deployment_officer",
-				fieldtype: "Data",
+				fieldtype: "Link",
 				label: __("Delivery Staff"),
+				options: "Employee",
 				reqd: 1,
 				default: frm.doc.deployment_officer,
+				get_query: () => ({
+					filters: mohasil_employee_filters,
+				}),
 			},
 		],
 		primary_action_label: title,
@@ -244,10 +260,14 @@ function build_collection_dialog(frm, accounting_defaults) {
 	const fields = [
 		{
 			fieldname: "collection_office",
-			fieldtype: "Data",
+			fieldtype: "Link",
 			label: __("Collection Staff"),
+			options: "Employee",
 			reqd: 1,
 			default: frm.doc.collection_office,
+			get_query: () => ({
+				filters: mohasil_employee_filters,
+			}),
 		},
 		{
 			fieldname: "collected_amount",

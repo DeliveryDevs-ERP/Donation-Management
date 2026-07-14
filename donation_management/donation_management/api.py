@@ -12,6 +12,7 @@ DONOR_FIELDS = [
 	"donor_email",
 	"donor_phone_number",
 	"referred_by_trustee",
+	"mohasil",
 ]
 
 
@@ -25,6 +26,7 @@ def format_donor_response(donor):
 		"donor_email": donor.donor_email,
 		"donor_phone_number": donor.donor_phone_number,
 		"referred_by_trustee": donor.referred_by_trustee,
+		"mohasil": donor.mohasil,
 	}
 
 

@@ -144,9 +144,10 @@
   {
    "allow_on_submit": 1,
    "fieldname": "deployment_officer",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Delivery Staff"
+   "label": "Delivery Staff",
+   "options": "Employee"
   },
   {
    "fieldname": "column_break_nypz",
@@ -155,9 +156,10 @@
   {
    "allow_on_submit": 1,
    "fieldname": "collection_office",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Collection Staff"
+   "label": "Collection Staff",
+   "options": "Employee"
   },
   {
    "fieldname": "amended_from",

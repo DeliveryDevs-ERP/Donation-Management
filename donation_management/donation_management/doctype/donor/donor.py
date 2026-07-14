@@ -33,6 +33,7 @@ DONOR_TREE_BRANCH_TYPES = (
 	"Sub General Donor",
 	"Sub Key Donor",
 )
+MOHASIL_DESIGNATION = "Mohasil"
 
 
 class Donor(NestedSet):
@@ -50,6 +51,7 @@ class Donor(NestedSet):
 		self.validate_unique_donor_phone()
 		self.validate_phone_not_used_by_trustee()
 		self.validate_unique_donor_email()
+		self.validate_mohasil()
 
 	def on_update(self):
 		super().on_update()
@@ -181,6 +183,12 @@ class Donor(NestedSet):
 
 			parent = frappe.db.get_value("Donor", parent, "parent_donor")
 
+	def validate_mohasil(self):
+		if not self.mohasil:
+			return
+
+		validate_mohasil_employee(self.mohasil, "Mohasil")
+
 
 def normalize_cnic(cnic):
 	cnic = re.sub(r"\D", "", cnic or "")
@@ -219,6 +227,26 @@ def find_trustee_by_phone_digits(phone_digits, exclude=None):
 			return trustee.name
 
 	return None
+
+
+def validate_mohasil_employee(employee, label):
+	employee_details = frappe.db.get_value(
+		"Employee",
+		employee,
+		["designation", "status"],
+		as_dict=True,
+	)
+	if not employee_details:
+		frappe.throw(frappe._("{0} must be a valid Employee.").format(label))
+	if employee_details.status != "Active":
+		frappe.throw(frappe._("{0} must be an Active Employee.").format(label))
+	if employee_details.designation != MOHASIL_DESIGNATION:
+		frappe.throw(
+			frappe._("{0} must be an Employee with designation {1}.").format(
+				label,
+				MOHASIL_DESIGNATION,
+			)
+		)
 
 
 @frappe.whitelist()

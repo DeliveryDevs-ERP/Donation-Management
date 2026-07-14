@@ -5,7 +5,10 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
-from donation_management.donation_management.doctype.donor.donor import normalize_phone
+from donation_management.donation_management.doctype.donor.donor import (
+	normalize_phone,
+	validate_mohasil_employee,
+)
 from donation_management.donation_management.doctype.donor_program_enrollment.donor_program_enrollment import (
 	upsert_donor_program_enrollment,
 )
@@ -59,6 +62,7 @@ class DonationOrder(Document):
 
 		self.set_company_defaults()
 		self.set_donor_details()
+		self.validate_mohasil_details()
 		self.set_purpose_details()
 		self.set_previous_sponsorship_balance()
 		self.set_sponsorship_allocations()
@@ -148,6 +152,7 @@ class DonationOrder(Document):
 				"donor_phone_number",
 				"donor_phone_digits",
 				"referred_by_trustee",
+				"mohasil",
 			],
 			as_dict=True,
 		)
@@ -175,8 +180,54 @@ class DonationOrder(Document):
 		self.donor_email = donor.donor_email or self.donor_email
 		self.donor_phone_number = donor.donor_phone_number
 		self.referred_by_trustee = donor.referred_by_trustee
+		if cint(self.is_mohasil_collection) and not self.mohasil:
+			self.mohasil = donor.mohasil
 		if not self.name_on_donation_slip:
 			self.name_on_donation_slip = donor.customer_name
+
+	def validate_mohasil_details(self):
+		if self.manual_receipt_number:
+			self.manual_receipt_number = self.manual_receipt_number.strip()
+
+		if self.manual_receipt_number and not cint(self.is_mohasil_collection):
+			self.is_mohasil_collection = 1
+
+		if not cint(self.is_mohasil_collection):
+			self.mohasil = None
+			self.manual_receipt_number = None
+			self.manual_receipt_date = None
+			return
+
+		if self.manual_receipt_number and not self.mohasil:
+			frappe.throw(frappe._("Mohasil is required when Manual Receipt Number is entered."))
+
+		if self.mohasil:
+			validate_mohasil_employee(self.mohasil, "Mohasil")
+
+		if not self.mohasil:
+			frappe.throw(frappe._("Mohasil is required for Mohasil Collection."))
+
+		if not self.manual_receipt_number:
+			frappe.throw(frappe._("Manual Receipt Number is required for Mohasil Collection."))
+
+		if not self.manual_receipt_number:
+			return
+
+		existing_order = frappe.db.exists(
+			"Donation Order",
+			{
+				"manual_receipt_number": self.manual_receipt_number,
+				"name": ["!=", self.name],
+				"docstatus": ["!=", 2],
+			},
+		)
+		if existing_order:
+			frappe.throw(
+				frappe._("Manual Receipt Number {0} is already used in Donation Order {1}.").format(
+					self.manual_receipt_number,
+					existing_order,
+				)
+			)
 
 	def set_bank_deposit_status(self):
 		if self.mode_of_payment_type == "Cash" and self.accounting_status == "Posted":
@@ -936,6 +987,10 @@ class DonationOrder(Document):
 
 		locked_fields = (
 			"donor_name",
+			"is_mohasil_collection",
+			"mohasil",
+			"manual_receipt_number",
+			"manual_receipt_date",
 			"company",
 			"donation_posting_date",
 			"mode_of_payment",

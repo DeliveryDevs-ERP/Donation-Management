@@ -13,6 +13,7 @@ from donation_management.donation_management.api import (
 
 
 DENOMINATIONS = (10, 20, 50, 100, 500, 1000, 5000)
+MOHASIL_DESIGNATION = "Mohasil"
 
 
 class BoxCollection(Document):
@@ -30,6 +31,7 @@ class BoxCollection(Document):
 		self.validate_single_collection_per_box()
 		self.validate_status_change_uses_action()
 		self.validate_issued_fields_are_locked()
+		self.validate_mohasil_staff()
 		if not self.status:
 			self.status = "Available"
 
@@ -223,6 +225,7 @@ class BoxCollection(Document):
 		self.collection_office = collection_office or self.collection_office
 		if not self.collection_office:
 			frappe.throw(frappe._("Collection Staff is required."))
+		self.validate_mohasil_employee(self.collection_office, "Collection Staff")
 
 		denomination_rows = self.get_denomination_rows(denominations)
 		denomination_total = sum(row["amount"] for row in denomination_rows)
@@ -282,6 +285,33 @@ class BoxCollection(Document):
 
 		if missing_fields:
 			frappe.throw(frappe._("Missing assignment details: {0}").format(", ".join(missing_fields)))
+
+		self.validate_mohasil_employee(self.deployment_officer, "Delivery Staff")
+
+	def validate_mohasil_staff(self):
+		if self.deployment_officer:
+			self.validate_mohasil_employee(self.deployment_officer, "Delivery Staff")
+		if self.collection_office:
+			self.validate_mohasil_employee(self.collection_office, "Collection Staff")
+
+	def validate_mohasil_employee(self, employee, label):
+		employee_details = frappe.db.get_value(
+			"Employee",
+			employee,
+			["designation", "status"],
+			as_dict=True,
+		)
+		if not employee_details:
+			frappe.throw(frappe._("{0} must be a valid Employee.").format(label))
+		if employee_details.status != "Active":
+			frappe.throw(frappe._("{0} must be an Active Employee.").format(label))
+		if employee_details.designation != MOHASIL_DESIGNATION:
+			frappe.throw(
+				frappe._("{0} must be an Employee with designation {1}.").format(
+					label,
+					MOHASIL_DESIGNATION,
+				)
+			)
 
 	def populate_location_from_master(self, force=False):
 		if not self.donation_location:

@@ -17,6 +17,13 @@
   "name_on_donation_slip",
   "donation_posting_date",
   "location",
+  "is_mohasil_collection",
+  "mohasil_section",
+  "mohasil",
+  "manual_receipt_number",
+  "mohasil_column_break",
+  "manual_receipt_date",
+  "payment_details_section",
   "company",
   "mode_of_payment",
   "mode_of_payment_type",
@@ -149,6 +156,52 @@
    "in_list_view": 1,
    "label": "Location",
    "options": "Location Type"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_mohasil_collection",
+   "fieldtype": "Check",
+   "label": "Mohasil Collection"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "mohasil_section",
+   "fieldtype": "Section Break",
+   "label": "Mohasil Details"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "mohasil",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Mohasil",
+   "mandatory_depends_on": "eval:doc.is_mohasil_collection",
+   "options": "Employee"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "manual_receipt_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Manual Receipt Number",
+   "mandatory_depends_on": "eval:doc.is_mohasil_collection"
+  },
+  {
+   "fieldname": "mohasil_column_break",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "manual_receipt_date",
+   "fieldtype": "Date",
+   "label": "Manual Receipt Date"
+  },
+  {
+   "fieldname": "payment_details_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Details"
   },
   {
    "fieldname": "company",

@@ -10,6 +10,10 @@ const allowed_sponsorship_purposes = [
 	"Sponsorship - Maktab",
 ];
 const bank_draft_mode_of_payment = "Bank Draft";
+const mohasil_employee_filters = {
+	status: "Active",
+	designation: "Mohasil",
+};
 
 frappe.ui.form.on("Donation Order", {
 	setup(frm) {
@@ -24,6 +28,10 @@ frappe.ui.form.on("Donation Order", {
 				},
 			};
 		});
+
+		frm.set_query("mohasil", () => ({
+			filters: mohasil_employee_filters,
+		}));
 
 		frm.set_query("bank_account", () => {
 			const filters = { is_group: 0, account_type: "Bank" };
@@ -132,6 +140,7 @@ frappe.ui.form.on("Donation Order", {
 		update_beneficiary_fields(frm, false);
 		render_donor_program_enrollments(frm);
 		apply_sponsorship_table_rules(frm);
+		toggle_mohasil_details(frm);
 
 		if (frm.doc.docstatus === 1) {
 			return;
@@ -199,6 +208,13 @@ frappe.ui.form.on("Donation Order", {
 
 	donor_name(frm) {
 		set_donor_details_from_name(frm);
+	},
+
+	is_mohasil_collection(frm) {
+		toggle_mohasil_details(frm);
+		if (frm.doc.is_mohasil_collection) {
+			set_mohasil_from_selected_donor(frm);
+		}
 	},
 
 	purpose_of_donation(frm) {
@@ -366,6 +382,9 @@ function set_donor_from_email(frm) {
 			set_value_if_changed(frm, "donor_name", donor.name);
 			set_value_if_changed(frm, "donor_phone_number", donor.donor_phone_number || "");
 			set_value_if_changed(frm, "referred_by_trustee", donor.referred_by_trustee || "");
+			if (frm.doc.is_mohasil_collection && !frm.doc.mohasil) {
+				set_value_if_changed(frm, "mohasil", donor.mohasil || "");
+			}
 			if (!frm.doc.name_on_donation_slip) {
 				set_value_if_changed(frm, "name_on_donation_slip", donor.donor_name || donor.name);
 			}
@@ -971,6 +990,9 @@ function set_donor_from_phone(frm) {
 			set_value_if_changed(frm, "donor_name", donor.name);
 			set_value_if_changed(frm, "donor_phone_number", donor.donor_phone_number || frm.doc.donor_phone_number);
 			set_value_if_changed(frm, "referred_by_trustee", donor.referred_by_trustee || "");
+			if (frm.doc.is_mohasil_collection && !frm.doc.mohasil) {
+				set_value_if_changed(frm, "mohasil", donor.mohasil || "");
+			}
 			if (!frm.doc.name_on_donation_slip) {
 				set_value_if_changed(frm, "name_on_donation_slip", donor.donor_name || donor.name);
 			}
@@ -988,6 +1010,10 @@ function clear_donor_details(frm) {
 	set_value_if_changed(frm, "donor_email", "");
 	set_value_if_changed(frm, "name_on_donation_slip", "");
 	set_value_if_changed(frm, "referred_by_trustee", "");
+	set_value_if_changed(frm, "is_mohasil_collection", 0);
+	set_value_if_changed(frm, "mohasil", "");
+	set_value_if_changed(frm, "manual_receipt_number", "");
+	set_value_if_changed(frm, "manual_receipt_date", "");
 	set_previous_sponsorship_balance(frm);
 	render_donor_program_enrollments(frm);
 }
@@ -1009,6 +1035,7 @@ function show_create_donor_message(frm, donor_details) {
 					customer_name: frm.doc.name_on_donation_slip || "",
 					donor_phone_number,
 					donor_email,
+					mohasil: frm.doc.is_mohasil_collection ? frm.doc.mohasil || "" : "",
 				});
 			},
 		},
@@ -1037,11 +1064,40 @@ function set_donor_details_from_name(frm) {
 			set_value_if_changed(frm, "donor_email", donor.donor_email || "");
 			set_value_if_changed(frm, "donor_phone_number", donor.donor_phone_number || "");
 			set_value_if_changed(frm, "referred_by_trustee", donor.referred_by_trustee || "");
+			if (frm.doc.is_mohasil_collection && !frm.doc.mohasil) {
+				set_value_if_changed(frm, "mohasil", donor.mohasil || "");
+			}
 			if (!frm.doc.name_on_donation_slip && donor.donor_name) {
 				set_value_if_changed(frm, "name_on_donation_slip", donor.donor_name);
 			}
 			set_previous_sponsorship_balance(frm);
 			render_donor_program_enrollments(frm);
+		}
+	});
+}
+
+function toggle_mohasil_details(frm) {
+	const show_mohasil_details = cint(frm.doc.is_mohasil_collection);
+	frm.toggle_display("mohasil_section", show_mohasil_details);
+	frm.toggle_reqd("mohasil", show_mohasil_details);
+	frm.toggle_reqd("manual_receipt_number", show_mohasil_details);
+
+	if (!show_mohasil_details) {
+		set_value_if_changed(frm, "mohasil", "");
+		set_value_if_changed(frm, "manual_receipt_number", "");
+		set_value_if_changed(frm, "manual_receipt_date", "");
+	}
+}
+
+function set_mohasil_from_selected_donor(frm) {
+	if (!frm.doc.donor_name || frm.doc.mohasil) {
+		return;
+	}
+
+	frappe.db.get_value("Donor", frm.doc.donor_name, "mohasil").then((response) => {
+		const mohasil = response && response.message && response.message.mohasil;
+		if (frm.doc.is_mohasil_collection && !frm.doc.mohasil && mohasil) {
+			set_value_if_changed(frm, "mohasil", mohasil);
 		}
 	});
 }
