@@ -1,12 +1,14 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "CB-.########",
+ "autoname": "BK-.########",
  "creation": "2026-05-08 18:44:58.744115",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "book_details_section",
+  "book_type",
+  "item",
   "coupon_type",
   "coupon_value",
   "coupon_color",
@@ -17,11 +19,17 @@
   "volunteer_area",
   "date_section",
   "start_date",
-  "expiry_date",
   "page_section",
   "total_pages",
   "used_pages",
   "remaining_pages",
+  "donation_book_section",
+  "mohasil",
+  "from_receipt_no",
+  "to_receipt_no",
+  "column_break_receipts",
+  "used_receipts",
+  "remaining_receipts",
   "collection_section",
   "collected_amount",
   "cash_denominations",
@@ -42,22 +50,44 @@
    "label": "Book Details"
   },
   {
-   "fieldname": "coupon_type",
+   "fieldname": "book_type",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Coupon Type",
-   "options": "\nZakat\nAtiya\nFitra\nSadqa",
+   "in_standard_filter": 1,
+   "label": "Book Type",
+   "options": "\nCoupon Book\nDonation Book",
    "reqd": 1
   },
   {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item",
+   "mandatory_depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "options": "Item"
+  },
+  {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "fieldname": "coupon_type",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Coupon Type",
+   "read_only": 1,
+   "options": "\nZakat\nAtiya\nFitra\nFidya"
+  },
+  {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "coupon_value",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Coupon Value",
-   "options": "\n50\n100\n500",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "options": "\n50\n100\n500"
   },
   {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "coupon_color",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -77,14 +107,16 @@
    "fieldtype": "Column Break"
   },
   {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Warehouse",
-   "options": "Warehouse",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "options": "Warehouse"
   },
   {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "volunteer_name",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -92,6 +124,7 @@
    "options": "Employee"
   },
   {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "volunteer_area",
    "fieldtype": "Data",
    "label": "Volunteer Area",
@@ -110,28 +143,24 @@
    "reqd": 1
   },
   {
-   "fieldname": "expiry_date",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "label": "Expiry Date",
-   "read_only": 1
-  },
-  {
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "page_section",
    "fieldtype": "Section Break",
    "label": "Pages"
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "total_pages",
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Total Pages",
-   "non_negative": 1,
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.book_type == 'Coupon Book'",
+   "non_negative": 1
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "used_pages",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -141,6 +170,7 @@
   },
   {
    "default": "0",
+   "depends_on": "eval:doc.book_type == 'Coupon Book'",
    "fieldname": "remaining_pages",
    "fieldtype": "Int",
    "in_list_view": 1,
@@ -148,7 +178,56 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval:doc.status == 'Returned' || doc.status == 'Closed'",
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "donation_book_section",
+   "fieldtype": "Section Break",
+   "label": "Donation Book Details"
+  },
+  {
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "mohasil",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Mohasil",
+   "mandatory_depends_on": "eval:doc.book_type == 'Donation Book'",
+   "options": "Employee"
+  },
+  {
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "from_receipt_no",
+   "fieldtype": "Data",
+   "label": "From Receipt No",
+   "mandatory_depends_on": "eval:doc.book_type == 'Donation Book'"
+  },
+  {
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "to_receipt_no",
+   "fieldtype": "Data",
+   "label": "To Receipt No",
+   "mandatory_depends_on": "eval:doc.book_type == 'Donation Book'"
+  },
+  {
+   "fieldname": "column_break_receipts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "used_receipts",
+   "fieldtype": "Int",
+   "label": "Used Receipts",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.book_type == 'Donation Book'",
+   "fieldname": "remaining_receipts",
+   "fieldtype": "Int",
+   "label": "Remaining Receipts",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:(doc.book_type == 'Coupon Book' || doc.book_type == 'Donation Book') && (doc.status == 'Returned' || doc.status == 'Closed')",
    "fieldname": "collection_section",
    "fieldtype": "Section Break",
    "label": "Collection"
@@ -157,8 +236,8 @@
    "default": "0",
    "fieldname": "collected_amount",
    "fieldtype": "Currency",
-   "label": "Collected Amount",
-   "mandatory_depends_on": "eval:doc.status == 'Returned' || doc.status == 'Closed'",
+   "label": "Total Amount Collected",
+   "mandatory_depends_on": "eval:(doc.book_type == 'Coupon Book' || doc.book_type == 'Donation Book') && (doc.status == 'Returned' || doc.status == 'Closed')",
    "non_negative": 1,
    "read_only": 1
   },
@@ -166,11 +245,11 @@
    "fieldname": "cash_denominations",
    "fieldtype": "Table",
    "label": "Cash Denominations",
-   "mandatory_depends_on": "eval:doc.status == 'Returned' || doc.status == 'Closed'",
+   "mandatory_depends_on": "eval:(doc.book_type == 'Coupon Book' || doc.book_type == 'Donation Book') && (doc.status == 'Returned' || doc.status == 'Closed')",
    "options": "Cash Denomination"
   },
   {
-   "depends_on": "eval:doc.status == 'Returned' || doc.status == 'Closed'",
+   "depends_on": "eval:doc.book_type == 'Coupon Book' && (doc.status == 'Returned' || doc.status == 'Closed')",
    "fieldname": "accounting_section",
    "fieldtype": "Section Break",
    "label": "Accounting"
@@ -239,7 +318,7 @@
  "modified": "2026-05-11 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Donation Management",
- "name": "Coupon Book",
+ "name": "Book",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
@@ -269,10 +348,10 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "search_fields": "coupon_type,status,warehouse,volunteer_name",
+ "search_fields": "book_type,coupon_type,status,warehouse,volunteer_name,mohasil",
  "show_title_field_in_link": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "coupon_type"
+ "title_field": "book_type"
 }

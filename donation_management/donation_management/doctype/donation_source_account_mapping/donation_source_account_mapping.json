@@ -19,7 +19,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Source Type",
-   "options": "\nBox Collection\nCoupon Book",
+   "options": "\nBox Collection\nBook",
    "reqd": 1
   },
   {
@@ -35,7 +35,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Donation Type",
-   "options": "\nZakat\nAtiya\nSadqa\nFitra",
+   "options": "\nZakat\nAtiya\nSadqa\nFitra\nFidya",
    "reqd": 1
   },
   {

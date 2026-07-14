@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import cint, flt
 
 
-COUPON_TYPES = ("Zakat", "Atiya", "Fitra", "Sadqa")
+COUPON_TYPES = ("Zakat", "Atiya", "Fitra", "Fidya")
 
 
 def execute(filters=None):
@@ -24,14 +24,14 @@ def get_columns():
 
 
 def get_data(filters):
-	conditions = {}
+	conditions = {"book_type": "Coupon Book"}
 	if filters.get("volunteer_name"):
 		conditions["volunteer_name"] = filters.volunteer_name
 	if filters.get("coupon_type"):
 		conditions["coupon_type"] = filters.coupon_type
 
-	coupon_books = frappe.get_all(
-		"Coupon Book",
+	books = frappe.get_all(
+		"Book",
 		filters=conditions,
 		fields=[
 			"volunteer_name",
@@ -43,7 +43,7 @@ def get_data(filters):
 		],
 	)
 
-	volunteers = sorted({book.volunteer_name for book in coupon_books if book.volunteer_name})
+	volunteers = sorted({book.volunteer_name for book in books if book.volunteer_name})
 	if filters.get("volunteer_name") and filters.volunteer_name not in volunteers:
 		volunteers.append(filters.volunteer_name)
 	if not volunteers:
@@ -64,7 +64,7 @@ def get_data(filters):
 		if not filters.get("coupon_type") or coupon_type == filters.coupon_type
 	}
 
-	for book in coupon_books:
+	for book in books:
 		key = (book.volunteer_name, book.coupon_type)
 		if key not in report_rows:
 			report_rows[key] = {

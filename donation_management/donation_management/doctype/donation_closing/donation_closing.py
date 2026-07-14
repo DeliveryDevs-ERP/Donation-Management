@@ -287,7 +287,7 @@ def get_pending_cash_donations(company=None, closing_date=None, exclude_closing=
 	pending = []
 	pending.extend(get_pending_donation_orders(company, closing_date, exclude_closing))
 	pending.extend(get_pending_box_collections(company, closing_date, exclude_closing))
-	pending.extend(get_pending_coupon_books(company, closing_date, exclude_closing))
+	pending.extend(get_pending_books(company, closing_date, exclude_closing))
 	return pending
 
 
@@ -395,23 +395,24 @@ def get_pending_box_collections(company, closing_date=None, exclude_closing=None
 	return result
 
 
-def get_pending_coupon_books(company, closing_date=None, exclude_closing=None):
+def get_pending_books(company, closing_date=None, exclude_closing=None):
 	books = frappe.db.sql(
 		"""
 		select
-			coupon_book.name,
-			coupon_book.collected_amount,
-			coupon_book.coupon_type,
+			book.name,
+			book.collected_amount,
+			book.coupon_type,
 			journal_entry.posting_date
-		from `tabCoupon Book` coupon_book
+		from `tabBook` book
 		inner join `tabJournal Entry` journal_entry
-			on journal_entry.name = coupon_book.journal_entry
+			on journal_entry.name = book.journal_entry
 			and journal_entry.docstatus = 1
-		where coupon_book.status in ('Returned', 'Closed')
-			and coupon_book.company = %(company)s
-			and coupon_book.accounting_status = 'Posted'
+		where book.status in ('Returned', 'Closed')
+			and book.book_type = 'Coupon Book'
+			and book.company = %(company)s
+			and book.accounting_status = 'Posted'
 			and (%(closing_date)s is null or journal_entry.posting_date = %(closing_date)s)
-		order by journal_entry.posting_date asc, coupon_book.creation asc
+		order by journal_entry.posting_date asc, book.creation asc
 		""",
 		{"company": company, "closing_date": closing_date},
 		as_dict=True,
@@ -419,11 +420,11 @@ def get_pending_coupon_books(company, closing_date=None, exclude_closing=None):
 
 	result = []
 	for book in books:
-		if is_source_in_active_closing("Coupon Book", book.name, exclude=exclude_closing):
+		if is_source_in_active_closing("Book", book.name, exclude=exclude_closing):
 			continue
 		result.append(
 			{
-				"source_doctype": "Coupon Book",
+				"source_doctype": "Book",
 				"source_name": book.name,
 				"donation_type": book.coupon_type,
 				"amount": book.collected_amount,

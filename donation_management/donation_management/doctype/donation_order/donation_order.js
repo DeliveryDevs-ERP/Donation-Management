@@ -217,6 +217,14 @@ frappe.ui.form.on("Donation Order", {
 		}
 	},
 
+	cash_denominations_add(frm) {
+		update_cash_denomination_rows(frm);
+	},
+
+	cash_denominations_remove(frm) {
+		update_cash_denomination_rows(frm);
+	},
+
 	purpose_of_donation(frm) {
 		set_value_if_changed(frm, "donation_purpose", "");
 		set_value_if_changed(frm, "purpose_path", "");
@@ -286,6 +294,16 @@ frappe.ui.form.on("Donation Order", {
 		set_sponsorship_totals(frm);
 	},
 
+});
+
+frappe.ui.form.on("Cash Denomination", {
+	denomination(frm, cdt, cdn) {
+		update_cash_denomination_row(frm, cdt, cdn);
+	},
+
+	note_count(frm, cdt, cdn) {
+		update_cash_denomination_row(frm, cdt, cdn);
+	},
 });
 
 frappe.ui.form.on("Donation Order Purpose Detail", {
@@ -1081,11 +1099,14 @@ function toggle_mohasil_details(frm) {
 	frm.toggle_display("mohasil_section", show_mohasil_details);
 	frm.toggle_reqd("mohasil", show_mohasil_details);
 	frm.toggle_reqd("manual_receipt_number", show_mohasil_details);
+	frm.toggle_reqd("cash_denominations", show_mohasil_details);
 
 	if (!show_mohasil_details) {
 		set_value_if_changed(frm, "mohasil", "");
 		set_value_if_changed(frm, "manual_receipt_number", "");
 		set_value_if_changed(frm, "manual_receipt_date", "");
+		frm.clear_table("cash_denominations");
+		frm.refresh_field("cash_denominations");
 	}
 }
 
@@ -1100,6 +1121,19 @@ function set_mohasil_from_selected_donor(frm) {
 			set_value_if_changed(frm, "mohasil", mohasil);
 		}
 	});
+}
+
+function update_cash_denomination_row(frm, cdt, cdn) {
+	const row = locals[cdt][cdn];
+	frappe.model.set_value(cdt, cdn, "amount", cint(row.denomination) * cint(row.note_count));
+	update_cash_denomination_rows(frm);
+}
+
+function update_cash_denomination_rows(frm) {
+	(frm.doc.cash_denominations || []).forEach((row) => {
+		row.amount = cint(row.denomination) * cint(row.note_count);
+	});
+	frm.refresh_field("cash_denominations");
 }
 
 function update_beneficiary_fields(frm, clear_hidden_values) {

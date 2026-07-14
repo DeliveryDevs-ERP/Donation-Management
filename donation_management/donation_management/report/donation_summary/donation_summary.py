@@ -260,21 +260,22 @@ def get_coupon_receipts(company, from_date, to_date, accounting_status):
 		select
 			coupon.name,
 			coupon.posting_date as operational_date,
-			coupon.coupon_book,
+			coupon.book,
 			coupon.amount,
-			coupon_book.coupon_type,
-			coupon_book.collected_amount as book_collected_amount,
-			coupon_book.accounting_status,
-			coupon_book.journal_entry,
+			book.coupon_type,
+			book.collected_amount as book_collected_amount,
+			book.accounting_status,
+			book.journal_entry,
 			journal_entry.posting_date as journal_posting_date,
 			journal_entry.docstatus as journal_docstatus
 		from `tabCoupon` coupon
-		inner join `tabCoupon Book` coupon_book
-			on coupon_book.name = coupon.coupon_book
+		inner join `tabBook` book
+			on book.name = coupon.book
 		left join `tabJournal Entry` journal_entry
-			on journal_entry.name = coupon_book.journal_entry
-		where coupon_book.company = %(company)s
-			and coupon_book.status in ('Returned', 'Closed')
+			on journal_entry.name = book.journal_entry
+		where book.company = %(company)s
+			and book.book_type = 'Coupon Book'
+			and book.status in ('Returned', 'Closed')
 			and coupon.docstatus != 2
 		""",
 		"coupon.posting_date",
@@ -286,16 +287,16 @@ def get_coupon_receipts(company, from_date, to_date, accounting_status):
 	if not rows:
 		return [], {}
 
-	book_names = list({row.coupon_book for row in rows})
+	book_names = list({row.book for row in rows})
 	book_coupon_totals = {
-		row.coupon_book: flt(row.total_amount)
+		row.book: flt(row.total_amount)
 		for row in frappe.db.sql(
 			"""
-			select coupon_book, sum(amount) as total_amount
+			select book, sum(amount) as total_amount
 			from `tabCoupon`
-			where coupon_book in %(book_names)s
+			where book in %(book_names)s
 				and docstatus != 2
-			group by coupon_book
+			group by book
 			""",
 			{"book_names": tuple(book_names)},
 			as_dict=True,
@@ -307,9 +308,9 @@ def get_coupon_receipts(company, from_date, to_date, accounting_status):
 	for row in rows:
 		status = get_row_accounting_status(row)
 		assert_amount_matches(
-			book_coupon_totals.get(row.coupon_book, 0),
+			book_coupon_totals.get(row.book, 0),
 			row.book_collected_amount,
-			_("Coupon Book {0} coupon total").format(row.coupon_book),
+			_("Book {0} coupon total").format(row.book),
 		)
 
 		receipt = {
@@ -327,8 +328,8 @@ def get_coupon_receipts(company, from_date, to_date, accounting_status):
 		receipts.append(receipt)
 		add_reconciliation(
 			reconciliations,
-			source_type="Coupon Book",
-			source_name=row.coupon_book,
+			source_type="Book",
+			source_name=row.book,
 			journal_entry=row.journal_entry,
 			amount=row.book_collected_amount,
 			status=status,

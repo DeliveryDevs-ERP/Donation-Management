@@ -5,12 +5,26 @@ const coupon_colors = {
 	Zakat: "Green",
 	Atiya: "Blue",
 	Fitra: "Purple",
-	Sadqa: "Orange",
+	Fidya: "Orange",
 };
 const denominations = [10, 20, 50, 100, 500, 1000, 5000];
+const book_type_coupon = "Coupon Book";
+const book_type_donation = "Donation Book";
+const mohasil_employee_filters = {
+	status: "Active",
+	designation: "Mohasil",
+};
 
-frappe.ui.form.on("Coupon Book", {
+frappe.ui.form.on("Book", {
 	setup(frm) {
+		frm.set_query("item", () => ({
+			query: "donation_management.donation_management.doctype.book.book.get_coupon_items",
+		}));
+
+		frm.set_query("mohasil", () => ({
+			filters: mohasil_employee_filters,
+		}));
+
 		frm.set_query("mode_of_payment", () => ({
 			filters: {
 				enabled: 1,
@@ -44,8 +58,19 @@ frappe.ui.form.on("Coupon Book", {
 	},
 
 	refresh(frm) {
+		set_book_type_visibility(frm);
 		set_collection_visibility(frm);
 		add_action_buttons(frm);
+	},
+
+	book_type(frm) {
+		set_book_type_visibility(frm);
+		set_coupon_color(frm);
+		check_available_stock(frm);
+	},
+
+	item(frm) {
+		set_coupon_type_from_item(frm);
 	},
 
 	volunteer_name(frm) {
@@ -63,10 +88,6 @@ frappe.ui.form.on("Coupon Book", {
 
 	status(frm) {
 		set_collection_visibility(frm);
-	},
-
-	start_date(frm) {
-		set_expiry_date(frm);
 	},
 
 	total_pages(frm) {
@@ -97,16 +118,20 @@ frappe.ui.form.on("Cash Denomination", {
 });
 
 function set_coupon_color(frm) {
+	if (frm.doc.book_type !== book_type_coupon) {
+		frm.set_value("coupon_color", "");
+		return;
+	}
 	frm.set_value("coupon_color", coupon_colors[frm.doc.coupon_type] || "");
 }
 
 function check_available_stock(frm) {
-	if (!frm.doc.coupon_type || !frm.doc.warehouse || frm.doc.status) {
+	if (frm.doc.book_type !== book_type_coupon || !frm.doc.coupon_type || !frm.doc.warehouse || frm.doc.status) {
 		return;
 	}
 
 	frappe.call({
-		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.get_available_coupon_book_stock",
+		method: "donation_management.donation_management.doctype.book.book.get_available_coupon_book_stock",
 		args: {
 			coupon_type: frm.doc.coupon_type,
 			warehouse: frm.doc.warehouse,
@@ -115,7 +140,7 @@ function check_available_stock(frm) {
 			const available_stock = cint(response.message);
 			if (available_stock <= 0) {
 				frappe.msgprint(
-					__("No Coupon Book stock is available for {0} in warehouse {1}.", [
+					__("No Book stock is available for {0} in warehouse {1}.", [
 						frm.doc.coupon_type,
 						frm.doc.warehouse,
 					])
@@ -124,25 +149,36 @@ function check_available_stock(frm) {
 			}
 
 			frappe.show_alert({
-				message: __("Available Coupon Book stock: {0}", [available_stock]),
+				message: __("Available Book stock: {0}", [available_stock]),
 				indicator: "green",
 			});
 		},
 	});
 }
 
-function set_expiry_date(frm) {
-	if (!frm.doc.start_date) {
-		frm.set_value("expiry_date", "");
-		return;
-	}
-
-	frm.set_value("expiry_date", frappe.datetime.add_days(frm.doc.start_date, 45));
-}
-
 function set_remaining_pages(frm) {
 	const remaining_pages = cint(frm.doc.total_pages) - cint(frm.doc.used_pages);
 	frm.set_value("remaining_pages", remaining_pages);
+}
+
+function set_coupon_type_from_item(frm) {
+	if (frm.doc.book_type !== book_type_coupon || !frm.doc.item) {
+		frm.set_value("coupon_type", "");
+		set_coupon_color(frm);
+		return;
+	}
+
+	frappe.call({
+		method: "donation_management.donation_management.doctype.book.book.get_coupon_type_for_item",
+		args: {
+			item: frm.doc.item,
+		},
+		callback(response) {
+			frm.set_value("coupon_type", response.message || "");
+			set_coupon_color(frm);
+			check_available_stock(frm);
+		},
+	});
 }
 
 function update_denomination_row(frm, cdt, cdn) {
@@ -159,12 +195,28 @@ function update_denomination_rows(frm) {
 }
 
 function set_collection_visibility(frm) {
-	const show_collection = ["Returned", "Closed"].includes(frm.doc.status);
+	const show_collection =
+		[book_type_coupon, book_type_donation].includes(frm.doc.book_type)
+		&& ["Returned", "Closed"].includes(frm.doc.status);
 	frm.toggle_display("collection_section", show_collection);
 	frm.toggle_reqd("collected_amount", show_collection);
 	frm.toggle_reqd("cash_denominations", show_collection);
 	frm.set_df_property("collected_amount", "read_only", 1);
 	frm.set_df_property("status", "read_only", 1);
+}
+
+function set_book_type_visibility(frm) {
+	const is_coupon_book = frm.doc.book_type === book_type_coupon;
+	const is_donation_book = frm.doc.book_type === book_type_donation;
+
+	frm.toggle_reqd("item", is_coupon_book);
+	frm.toggle_reqd("coupon_value", is_coupon_book);
+	frm.toggle_reqd("warehouse", is_coupon_book);
+	frm.toggle_reqd("total_pages", is_coupon_book);
+
+	frm.toggle_reqd("mohasil", is_donation_book);
+	frm.toggle_reqd("from_receipt_no", is_donation_book);
+	frm.toggle_reqd("to_receipt_no", is_donation_book);
 }
 
 function add_action_buttons(frm) {
@@ -173,33 +225,106 @@ function add_action_buttons(frm) {
 	}
 
 	if (!frm.doc.status && frappe.user.has_role("Finance Manager")) {
-		frm.add_custom_button(__("Issue"), () => issue_coupon_book(frm), __("Actions"));
-	} else if (frm.doc.status === "Issued") {
+		frm.add_custom_button(__("Issue"), () => issue_book(frm), __("Actions"));
+	} else if (frm.doc.status === "Issued" && frm.doc.book_type === book_type_coupon) {
 		frm.add_custom_button(__("Return"), () => show_return_dialog(frm), __("Actions"));
 		frm.add_custom_button(__("Request Page Adjustment"), () => create_page_adjustment(frm), __("Actions"));
+	} else if (frm.doc.status === "Issued" && frm.doc.book_type === book_type_donation) {
+		frm.add_custom_button(__("Return"), () => show_donation_book_return_dialog(frm), __("Actions"));
 	} else if (frm.doc.status === "Returned") {
-		frm.add_custom_button(__("Close"), () => close_coupon_book(frm), __("Actions"));
-		frm.add_custom_button(__("Request Page Adjustment"), () => create_page_adjustment(frm), __("Actions"));
+		frm.add_custom_button(__("Close"), () => close_book(frm), __("Actions"));
+		if (frm.doc.book_type === book_type_coupon) {
+			frm.add_custom_button(__("Request Page Adjustment"), () => create_page_adjustment(frm), __("Actions"));
+		}
 	}
 }
 
 function create_page_adjustment(frm) {
-	frappe.new_doc("Coupon Book Page Adjustment", {
-		coupon_book: frm.doc.name,
+	frappe.new_doc("Book Page Adjustment", {
+		book: frm.doc.name,
 	});
 }
 
-function issue_coupon_book(frm) {
+function issue_book(frm) {
 	frappe.call({
-		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.issue_coupon_book",
+		method: "donation_management.donation_management.doctype.book.book.issue_book",
 		args: {
-			coupon_book: frm.doc.name,
+			book: frm.doc.name,
 		},
 		freeze: true,
 		callback() {
 			frm.reload_doc();
 		},
 	});
+}
+
+function show_donation_book_return_dialog(frm) {
+	const fields = [
+		{
+			fieldname: "collected_amount",
+			fieldtype: "Currency",
+			label: __("Total Amount Collected"),
+			reqd: 1,
+			non_negative: 1,
+			onchange: () => update_return_denomination_total(dialog),
+		},
+		{
+			fieldname: "denomination_section",
+			fieldtype: "Section Break",
+			label: __("Cash Denominations"),
+		},
+	];
+
+	denominations.forEach((denomination) => {
+		fields.push({
+			fieldname: `denomination_${denomination}`,
+			fieldtype: "Int",
+			label: __("{0} Rs Notes", [denomination]),
+			default: 0,
+			non_negative: 1,
+			onchange: () => update_return_denomination_total(dialog),
+		});
+	});
+
+	fields.push({
+		fieldname: "denomination_total",
+		fieldtype: "Currency",
+		label: __("Denomination Total"),
+		read_only: 1,
+	});
+
+	const dialog = new frappe.ui.Dialog({
+		title: __("Return Donation Book"),
+		fields,
+		primary_action_label: __("Return"),
+		primary_action(values) {
+			if (!validate_donation_book_return_denomination_total(dialog)) {
+				return;
+			}
+
+			const denomination_rows = denominations.map((denomination) => ({
+				denomination,
+				note_count: cint(values[`denomination_${denomination}`]),
+			}));
+
+			frappe.call({
+				method: "donation_management.donation_management.doctype.book.book.return_donation_book",
+				args: {
+					book: frm.doc.name,
+					collected_amount: values.collected_amount,
+					denominations: denomination_rows,
+				},
+				freeze: true,
+				callback() {
+					dialog.hide();
+					frm.reload_doc();
+				},
+			});
+		},
+	});
+
+	dialog.show();
+	update_return_denomination_total(dialog);
 }
 
 function set_volunteer_area(frm) {
@@ -209,7 +334,7 @@ function set_volunteer_area(frm) {
 	}
 
 	frappe.call({
-		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.get_volunteer_area",
+		method: "donation_management.donation_management.doctype.book.book.get_volunteer_area",
 		args: {
 			volunteer_name: frm.doc.volunteer_name,
 		},
@@ -223,7 +348,7 @@ function show_return_dialog(frm) {
 	frappe.call({
 		method: "donation_management.donation_management.api.get_collection_cash_accounting_defaults",
 		args: {
-			source_type: "Coupon Book",
+			source_type: "Book",
 			donation_type: frm.doc.coupon_type,
 		},
 		callback(response) {
@@ -255,7 +380,7 @@ function build_return_dialog(frm, accounting_defaults) {
 		{
 			fieldname: "collected_amount",
 			fieldtype: "Currency",
-			label: __("Collected Amount"),
+			label: __("Total Amount Collected"),
 			default: 0,
 			read_only: 1,
 			reqd: 1,
@@ -328,7 +453,7 @@ function build_return_dialog(frm, accounting_defaults) {
 	});
 
 	const dialog = new frappe.ui.Dialog({
-		title: __("Return Coupon Book"),
+		title: __("Return Book"),
 		fields,
 		primary_action_label: __("Return"),
 		primary_action(values) {
@@ -342,9 +467,9 @@ function build_return_dialog(frm, accounting_defaults) {
 			}));
 
 			frappe.call({
-				method: "donation_management.donation_management.doctype.coupon_book.coupon_book.return_coupon_book",
+				method: "donation_management.donation_management.doctype.book.book.return_book",
 			args: {
-				coupon_book: frm.doc.name,
+				book: frm.doc.name,
 				collected_amount: values.collected_amount,
 				used_pages: values.used_pages,
 				denominations: denomination_rows,
@@ -395,9 +520,21 @@ function validate_return_denomination_total(dialog, frm) {
 		return false;
 	}
 
+	const expected_amount = cint(dialog.get_value("used_pages")) * cint(frm.doc.coupon_value);
+	if (collected_amount !== expected_amount) {
+		frappe.msgprint(
+			__("Total Amount Collected must be {0} because Used Pages x Coupon Value is {1} x {2}.", [
+				format_currency(expected_amount),
+				cint(dialog.get_value("used_pages")),
+				cint(frm.doc.coupon_value),
+			])
+		);
+		return false;
+	}
+
 	if (collected_amount !== denomination_total) {
 		frappe.msgprint(
-			__("Denomination total {0} must match Collected Amount {1}.", [
+			__("Denomination total {0} must match Total Amount Collected {1}.", [
 				format_currency(denomination_total),
 				format_currency(collected_amount),
 			])
@@ -408,11 +545,33 @@ function validate_return_denomination_total(dialog, frm) {
 	return true;
 }
 
-function close_coupon_book(frm) {
+function validate_donation_book_return_denomination_total(dialog) {
+	const collected_amount = flt(dialog.get_value("collected_amount"));
+	const denomination_total = flt(dialog.get_value("denomination_total"));
+
+	if (collected_amount <= 0) {
+		frappe.msgprint(__("Total Amount Collected must be greater than zero."));
+		return false;
+	}
+
+	if (collected_amount !== denomination_total) {
+		frappe.msgprint(
+			__("Denomination total {0} must match Total Amount Collected {1}.", [
+				format_currency(denomination_total),
+				format_currency(collected_amount),
+			])
+		);
+		return false;
+	}
+
+	return true;
+}
+
+function close_book(frm) {
 	frappe.call({
-		method: "donation_management.donation_management.doctype.coupon_book.coupon_book.close_coupon_book",
+		method: "donation_management.donation_management.doctype.book.book.close_book",
 		args: {
-			coupon_book: frm.doc.name,
+			book: frm.doc.name,
 		},
 		freeze: true,
 		callback() {

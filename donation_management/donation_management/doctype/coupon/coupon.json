@@ -7,7 +7,7 @@
  "engine": "InnoDB",
  "field_order": [
   "coupon_detail_section",
-  "coupon_book",
+  "book",
   "coupon_color",
   "coupon_number",
   "column_break_coupon",
@@ -55,15 +55,15 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "coupon_book",
+   "fieldname": "book",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Coupon Book",
-   "options": "Coupon Book",
+   "label": "Book",
+   "options": "Book",
    "reqd": 1
   },
   {
-   "fetch_from": "coupon_book.warehouse",
+   "fetch_from": "book.warehouse",
    "fieldname": "warehouse",
    "fieldtype": "Link",
    "label": "Warehouse",
@@ -110,14 +110,14 @@
    "label": "Volunteer Details"
   },
   {
-   "fetch_from": "coupon_book.volunteer_name",
+   "fetch_from": "book.volunteer_name",
    "fieldname": "volunteer_name",
    "fieldtype": "Link",
    "label": "Volunteer Name",
    "options": "Employee"
   },
   {
-   "fetch_from": "coupon_book.volunteer_area",
+   "fetch_from": "book.volunteer_area",
    "fieldname": "area",
    "fieldtype": "Data",
    "label": "Area",
@@ -191,7 +191,7 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
- "search_fields": "coupon_number,donor_name,volunteer_name,coupon_book",
+ "search_fields": "coupon_number,donor_name,volunteer_name,book",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

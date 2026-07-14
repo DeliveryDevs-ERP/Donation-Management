@@ -1,7 +1,7 @@
 // Copyright (c) 2026, osama.ahmed@deliverydevs.com and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Coupon Book Page Adjustment", {
+frappe.ui.form.on("Book Page Adjustment", {
 	refresh(frm) {
 		if (frm.is_new() || frm.doc.docstatus !== 1) {
 			return;

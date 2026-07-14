@@ -10,7 +10,7 @@ frappe.query_reports["Volunteer Coupon Assignment Report"] = {
 			fieldname: "coupon_type",
 			label: __("Coupon Type"),
 			fieldtype: "Select",
-			options: "\nZakat\nAtiya\nFitra\nSadqa",
+			options: "\nZakat\nAtiya\nFitra\nFidya",
 		},
 	],
 };

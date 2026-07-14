@@ -10,11 +10,11 @@
  "modified": "2026-05-11 00:00:00",
  "modified_by": "Administrator",
  "module": "Donation Management",
- "name": "Coupon Book Inventory Report",
+ "name": "Book Inventory Report",
  "owner": "Administrator",
  "prepared_report": 0,
- "ref_doctype": "Coupon Book Inventory",
- "report_name": "Coupon Book Inventory Report",
+ "ref_doctype": "Book Inventory",
+ "report_name": "Book Inventory Report",
  "report_type": "Script Report",
  "roles": [
   {

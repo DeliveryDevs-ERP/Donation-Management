@@ -23,6 +23,7 @@
   "manual_receipt_number",
   "mohasil_column_break",
   "manual_receipt_date",
+  "cash_denominations",
   "payment_details_section",
   "company",
   "mode_of_payment",
@@ -197,6 +198,14 @@
    "fieldname": "manual_receipt_date",
    "fieldtype": "Date",
    "label": "Manual Receipt Date"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "cash_denominations",
+   "fieldtype": "Table",
+   "label": "Cash Denominations",
+   "mandatory_depends_on": "eval:doc.is_mohasil_collection",
+   "options": "Cash Denomination"
   },
   {
    "fieldname": "payment_details_section",

@@ -3,7 +3,7 @@ from frappe import _
 from frappe.utils import cint
 
 
-COUPON_TYPES = ("Zakat", "Atiya", "Fitra", "Sadqa")
+COUPON_TYPES = ("Zakat", "Atiya", "Fitra", "Fidya")
 
 
 def execute(filters=None):
@@ -32,20 +32,20 @@ def get_data(filters):
 		conditions["warehouse"] = filters.warehouse
 
 	ledger_entries = frappe.get_all(
-		"Coupon Book Inventory",
+		"Book Inventory",
 		filters=conditions,
 		fields=["coupon_type", "warehouse", "movement_type", "quantity", "signed_quantity"],
 	)
 
-	coupon_books = frappe.get_all(
-		"Coupon Book",
-		filters=conditions,
+	books = frappe.get_all(
+		"Book",
+		filters={**conditions, "book_type": "Coupon Book"},
 		fields=["coupon_type", "warehouse", "status"],
 	)
 
 	warehouses = sorted(
 		{entry.warehouse for entry in ledger_entries if entry.warehouse}
-		| {book.warehouse for book in coupon_books if book.warehouse}
+		| {book.warehouse for book in books if book.warehouse}
 	)
 	if filters.get("warehouse") and filters.warehouse not in warehouses:
 		warehouses.append(filters.warehouse)
@@ -86,7 +86,7 @@ def get_data(filters):
 		if entry.movement_type == "Receipt":
 			row["stock_added"] += cint(entry.quantity)
 
-	for book in coupon_books:
+	for book in books:
 		key = (book.coupon_type, book.warehouse)
 		if key not in report_rows:
 			report_rows[key] = {

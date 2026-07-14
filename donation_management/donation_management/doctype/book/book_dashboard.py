@@ -3,7 +3,7 @@ from frappe import _
 
 def get_data():
 	return {
-		"fieldname": "coupon_book",
+		"fieldname": "book",
 		"internal_links": {
 			"Journal Entry": "journal_entry",
 		},

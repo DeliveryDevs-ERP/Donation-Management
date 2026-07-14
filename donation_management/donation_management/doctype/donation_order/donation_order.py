@@ -31,6 +31,7 @@ ALLOWED_SPONSORSHIP_PURPOSES = (
 	"Sponsorship - Maktab",
 )
 SPONSORSHIP_DAYS_IN_MONTH = 30
+DENOMINATIONS = (10, 20, 50, 100, 500, 1000, 5000)
 CHEQUE_MODE_OF_PAYMENT = "Cheque"
 BANK_DRAFT_MODE_OF_PAYMENT = "Bank Draft"
 DEPOSIT_ACCOUNT_MODES = ("Cheque", "Card Payment")
@@ -68,6 +69,7 @@ class DonationOrder(Document):
 		self.set_sponsorship_allocations()
 		self.validate_beneficiary()
 		self.set_total_donation()
+		self.validate_cash_denominations()
 		self.set_accounting_details()
 		self.set_pdc_details()
 		self.validate_accounting_details()
@@ -196,6 +198,7 @@ class DonationOrder(Document):
 			self.mohasil = None
 			self.manual_receipt_number = None
 			self.manual_receipt_date = None
+			self.set("cash_denominations", [])
 			return
 
 		if self.manual_receipt_number and not self.mohasil:
@@ -226,6 +229,41 @@ class DonationOrder(Document):
 				frappe._("Manual Receipt Number {0} is already used in Donation Order {1}.").format(
 					self.manual_receipt_number,
 					existing_order,
+				)
+			)
+
+	def validate_cash_denominations(self):
+		if not cint(self.is_mohasil_collection):
+			self.set("cash_denominations", [])
+			return
+
+		if not self.cash_denominations:
+			frappe.throw(frappe._("Cash Denominations are required for Mohasil Collection."))
+
+		denomination_total = 0
+		has_note_count = False
+		for row in self.cash_denominations:
+			denomination = cint(row.denomination)
+			if denomination not in DENOMINATIONS:
+				frappe.throw(frappe._("Invalid denomination {0}.").format(row.denomination))
+
+			if cint(row.note_count) < 0:
+				frappe.throw(frappe._("Note count cannot be negative for denomination {0}.").format(row.denomination))
+
+			row.amount = denomination * cint(row.note_count)
+			denomination_total += flt(row.amount)
+			if cint(row.note_count):
+				has_note_count = True
+
+		if not has_note_count:
+			frappe.throw(frappe._("At least one denomination count is required for Mohasil Collection."))
+
+		expected_amount = flt(self.donation_amount)
+		if flt(denomination_total) != expected_amount:
+			frappe.throw(
+				frappe._("Cash denomination total {0} must match Total Donation Received {1}.").format(
+					frappe.format_value(denomination_total, {"fieldtype": "Currency"}),
+					frappe.format_value(expected_amount, {"fieldtype": "Currency"}),
 				)
 			)
 

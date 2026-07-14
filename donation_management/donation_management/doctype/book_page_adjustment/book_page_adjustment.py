@@ -6,9 +6,9 @@ from frappe.model.document import Document
 from frappe.utils import cint, now_datetime
 
 
-class CouponBookPageAdjustment(Document):
+class BookPageAdjustment(Document):
 	def validate(self):
-		self.validate_coupon_book()
+		self.validate_book()
 		self.validate_affected_pages()
 
 	def on_submit(self):
@@ -16,12 +16,15 @@ class CouponBookPageAdjustment(Document):
 			self.status = "Pending Donation Manager"
 			self.db_set("status", self.status, update_modified=False)
 
-	def validate_coupon_book(self):
-		if not self.coupon_book:
+	def validate_book(self):
+		if not self.book:
 			return
 
-		book_status = frappe.db.get_value("Coupon Book", self.coupon_book, "status")
-		if book_status not in ("Issued", "Returned", "Closed"):
+		book_details = frappe.db.get_value("Book", self.book, ["book_type", "status"], as_dict=True)
+		if not book_details or book_details.book_type != "Coupon Book":
+			frappe.throw(frappe._("Page adjustments can only be requested for Coupon Book records."))
+
+		if book_details.status not in ("Issued", "Returned", "Closed"):
 			frappe.throw(
 				frappe._("Page adjustments can only be requested for Issued, Returned, or Closed coupon books.")
 			)
@@ -30,10 +33,10 @@ class CouponBookPageAdjustment(Document):
 		if cint(self.affected_pages) <= 0:
 			frappe.throw(frappe._("Affected Pages must be greater than zero."))
 
-		if not self.coupon_book:
+		if not self.book:
 			return
 
-		total_pages = cint(frappe.db.get_value("Coupon Book", self.coupon_book, "total_pages"))
+		total_pages = cint(frappe.db.get_value("Book", self.book, "total_pages"))
 		if cint(self.affected_pages) > total_pages:
 			frappe.throw(
 				frappe._("Affected Pages ({0}) cannot exceed Total Pages ({1}).").format(
@@ -74,11 +77,11 @@ class CouponBookPageAdjustment(Document):
 		self.finance_manager = frappe.session.user
 		self.finance_manager_approved_on = now_datetime()
 		self.save(ignore_permissions=True)
-		self.apply_adjustment_to_coupon_book()
+		self.apply_adjustment_to_book()
 		return self.status
 
-	def apply_adjustment_to_coupon_book(self):
-		book = frappe.get_doc("Coupon Book", self.coupon_book)
+	def apply_adjustment_to_book(self):
+		book = frappe.get_doc("Book", self.book)
 		affected = cint(self.affected_pages)
 
 		if self.adjustment_type == "Less Pages or Leaves":
