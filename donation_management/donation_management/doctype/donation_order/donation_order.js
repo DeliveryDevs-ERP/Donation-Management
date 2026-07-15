@@ -33,6 +33,14 @@ frappe.ui.form.on("Donation Order", {
 			filters: mohasil_employee_filters,
 		}));
 
+		frm.set_query("donation_book", () => ({
+			filters: {
+				book_type: "Donation Book",
+				status: "Issued",
+				issued_to_employee: frm.doc.mohasil || "",
+			},
+		}));
+
 		frm.set_query("bank_account", () => {
 			const filters = { is_group: 0, account_type: "Bank" };
 			if (frm.doc.company) {
@@ -214,6 +222,12 @@ frappe.ui.form.on("Donation Order", {
 		toggle_mohasil_details(frm);
 		if (frm.doc.is_mohasil_collection) {
 			set_mohasil_from_selected_donor(frm);
+		}
+	},
+
+	mohasil(frm) {
+		if (frm.doc.donation_book) {
+			frm.set_value("donation_book", "");
 		}
 	},
 
@@ -1098,11 +1112,13 @@ function toggle_mohasil_details(frm) {
 	const show_mohasil_details = cint(frm.doc.is_mohasil_collection);
 	frm.toggle_display("mohasil_section", show_mohasil_details);
 	frm.toggle_reqd("mohasil", show_mohasil_details);
+	frm.toggle_reqd("donation_book", show_mohasil_details);
 	frm.toggle_reqd("manual_receipt_number", show_mohasil_details);
 	frm.toggle_reqd("cash_denominations", show_mohasil_details);
 
 	if (!show_mohasil_details) {
 		set_value_if_changed(frm, "mohasil", "");
+		set_value_if_changed(frm, "donation_book", "");
 		set_value_if_changed(frm, "manual_receipt_number", "");
 		set_value_if_changed(frm, "manual_receipt_date", "");
 		frm.clear_table("cash_denominations");

@@ -18,12 +18,38 @@ const mohasil_employee_filters = {
 frappe.ui.form.on("Book", {
 	setup(frm) {
 		frm.set_query("item", () => ({
-			query: "donation_management.donation_management.doctype.book.book.get_coupon_items",
+			query: "donation_management.donation_management.doctype.book.book.get_book_items",
+			filters: {
+				book_type: frm.doc.book_type,
+			},
+		}));
+
+		frm.set_query("book_serial_no", () => ({
+			query: "donation_management.donation_management.doctype.book.book.get_available_book_serial_nos",
+			filters: {
+				item: frm.doc.item,
+				warehouse: frm.doc.warehouse,
+				book: frm.doc.name,
+			},
 		}));
 
 		frm.set_query("mohasil", () => ({
 			filters: mohasil_employee_filters,
 		}));
+
+		frm.set_query("issued_to_employee", () => {
+			if (frm.doc.book_type === book_type_donation) {
+				return {
+					filters: mohasil_employee_filters,
+				};
+			}
+
+			return {
+				filters: {
+					status: "Active",
+				},
+			};
+		});
 
 		frm.set_query("mode_of_payment", () => ({
 			filters: {
@@ -66,11 +92,16 @@ frappe.ui.form.on("Book", {
 	book_type(frm) {
 		set_book_type_visibility(frm);
 		set_coupon_color(frm);
+		frm.set_value("item", "");
+		frm.set_value("book_serial_no", "");
+		frm.set_value("issued_to_employee", "");
 		check_available_stock(frm);
 	},
 
 	item(frm) {
+		frm.set_value("book_serial_no", "");
 		set_coupon_type_from_item(frm);
+		check_available_stock(frm);
 	},
 
 	volunteer_name(frm) {
@@ -83,6 +114,7 @@ frappe.ui.form.on("Book", {
 	},
 
 	warehouse(frm) {
+		frm.set_value("book_serial_no", "");
 		check_available_stock(frm);
 	},
 
@@ -126,22 +158,22 @@ function set_coupon_color(frm) {
 }
 
 function check_available_stock(frm) {
-	if (frm.doc.book_type !== book_type_coupon || !frm.doc.coupon_type || !frm.doc.warehouse || frm.doc.status) {
+	if (![book_type_coupon, book_type_donation].includes(frm.doc.book_type) || !frm.doc.item || !frm.doc.warehouse || frm.doc.status) {
 		return;
 	}
 
 	frappe.call({
-		method: "donation_management.donation_management.doctype.book.book.get_available_coupon_book_stock",
+		method: "donation_management.donation_management.doctype.book.book.get_book_stock_qty",
 		args: {
-			coupon_type: frm.doc.coupon_type,
+			item: frm.doc.item,
 			warehouse: frm.doc.warehouse,
 		},
 		callback(response) {
 			const available_stock = cint(response.message);
 			if (available_stock <= 0) {
 				frappe.msgprint(
-					__("No Book stock is available for {0} in warehouse {1}.", [
-						frm.doc.coupon_type,
+					__("No stock is available for Item {0} in Warehouse {1}.", [
+						frm.doc.item,
 						frm.doc.warehouse,
 					])
 				);
@@ -149,7 +181,7 @@ function check_available_stock(frm) {
 			}
 
 			frappe.show_alert({
-				message: __("Available Book stock: {0}", [available_stock]),
+				message: __("Available stock: {0}", [available_stock]),
 				indicator: "green",
 			});
 		},
@@ -209,12 +241,13 @@ function set_book_type_visibility(frm) {
 	const is_coupon_book = frm.doc.book_type === book_type_coupon;
 	const is_donation_book = frm.doc.book_type === book_type_donation;
 
-	frm.toggle_reqd("item", is_coupon_book);
+	frm.toggle_reqd("item", is_coupon_book || is_donation_book);
+	frm.toggle_reqd("book_serial_no", is_coupon_book || is_donation_book);
+	frm.toggle_reqd("issued_to_employee", is_coupon_book || is_donation_book);
 	frm.toggle_reqd("coupon_value", is_coupon_book);
-	frm.toggle_reqd("warehouse", is_coupon_book);
+	frm.toggle_reqd("warehouse", is_coupon_book || is_donation_book);
 	frm.toggle_reqd("total_pages", is_coupon_book);
 
-	frm.toggle_reqd("mohasil", is_donation_book);
 	frm.toggle_reqd("from_receipt_no", is_donation_book);
 	frm.toggle_reqd("to_receipt_no", is_donation_book);
 }

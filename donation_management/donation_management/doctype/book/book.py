@@ -3,10 +3,11 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import cint, flt, now_datetime, today
+from frappe.utils import cint, flt, today
 
 from donation_management.donation_management.api import (
 	create_collection_journal_entry,
+	get_default_company,
 	set_collection_accounting_details,
 	validate_collection_accounting_details,
 )
@@ -35,29 +36,31 @@ class Book(Document):
 		self.validate_issue_permission()
 		if self.is_coupon_book():
 			self.clear_donation_book_fields()
+			self.validate_book_stock_details()
 			self.validate_coupon_book_details()
 			self.set_coupon_type_from_item()
 			self.validate_coupon_type()
 			self.validate_coupon_value()
 			self.set_coupon_color()
+			self.set_coupon_employee_details()
 			self.set_volunteer_area()
 			self.set_used_pages_from_coupons()
 			self.set_remaining_pages()
 			self.validate_page_counts()
-			self.validate_stock_available_for_unissued_book()
+			self.validate_book_serial_no()
 			self.set_collected_amount_from_coupons()
 			self.set_accounting_details()
 			self.validate_cash_denominations()
 			self.validate_accounting_details()
-			self.validate_inventory_for_issue()
 		else:
 			self.clear_coupon_fields()
+			self.validate_book_stock_details()
+			self.validate_book_serial_no()
 			self.validate_donation_book_details()
 			self.validate_cash_denominations()
 
 	def on_update(self):
 		if self.is_coupon_book():
-			self.create_inventory_entry_for_status_change()
 			self.create_journal_entry_for_return()
 
 	def set_defaults(self):
@@ -65,6 +68,8 @@ class Book(Document):
 			self.book_type = BOOK_TYPE_COUPON
 		if not self.start_date:
 			self.start_date = today()
+		if not self.company:
+			self.company = get_default_company()
 
 	def is_coupon_book(self):
 		return self.book_type == BOOK_TYPE_COUPON
@@ -80,9 +85,36 @@ class Book(Document):
 		if self.coupon_type not in COUPON_COLORS:
 			frappe.throw(frappe._("Coupon Type must be Zakat, Atiya, Fitra, or Fidya."))
 
-	def validate_coupon_book_details(self):
+	def validate_book_stock_details(self):
 		if not self.item:
-			frappe.throw(frappe._("Item is required for Coupon Book."))
+			frappe.throw(frappe._("Item is required for Book."))
+		if not self.warehouse:
+			frappe.throw(frappe._("Warehouse is required for Book."))
+		if not self.book_serial_no:
+			frappe.throw(frappe._("Book Serial No is required for Book."))
+		if not self.issued_to_employee:
+			frappe.throw(frappe._("Issued To Employee is required for Book."))
+
+		item = frappe.db.get_value(
+			"Item",
+			self.item,
+			["disabled", "is_stock_item", "has_serial_no"],
+			as_dict=True,
+		)
+		if not item:
+			frappe.throw(frappe._("Item {0} was not found.").format(self.item))
+		if cint(item.disabled):
+			frappe.throw(frappe._("Item {0} is disabled.").format(self.item))
+		if not cint(item.is_stock_item) or not cint(item.has_serial_no):
+			frappe.throw(frappe._("Book Item {0} must be a stock Item with serial numbers enabled.").format(self.item))
+
+		employee = frappe.db.get_value("Employee", self.issued_to_employee, ["status"], as_dict=True)
+		if not employee:
+			frappe.throw(frappe._("Issued To Employee {0} was not found.").format(self.issued_to_employee))
+		if employee.status and employee.status != "Active":
+			frappe.throw(frappe._("Issued To Employee {0} must be active.").format(self.issued_to_employee))
+
+	def validate_coupon_book_details(self):
 		if not is_coupon_item(self.item):
 			frappe.throw(frappe._("Only coupon-related Items can be selected for Coupon Book."))
 
@@ -104,6 +136,9 @@ class Book(Document):
 
 	def set_volunteer_area(self):
 		self.volunteer_area = get_volunteer_area(self.volunteer_name)
+
+	def set_coupon_employee_details(self):
+		self.volunteer_name = self.issued_to_employee
 
 	def set_used_pages_from_coupons(self):
 		if self.is_new():
@@ -158,11 +193,9 @@ class Book(Document):
 			frappe.throw(frappe._("Used Pages cannot exceed Total Pages."))
 
 	def clear_coupon_fields(self):
-		self.item = None
 		self.coupon_type = None
 		self.coupon_value = None
 		self.coupon_color = None
-		self.warehouse = None
 		self.volunteer_name = None
 		self.volunteer_area = None
 		self.total_pages = 0
@@ -184,9 +217,8 @@ class Book(Document):
 		self.remaining_receipts = 0
 
 	def validate_donation_book_details(self):
-		if not self.mohasil:
-			frappe.throw(frappe._("Mohasil is required for Donation Book."))
-		validate_mohasil_employee(self.mohasil, "Mohasil")
+		validate_mohasil_employee(self.issued_to_employee, "Issued To Employee")
+
 		if not self.from_receipt_no or not self.to_receipt_no:
 			frappe.throw(frappe._("From Receipt No and To Receipt No are required for Donation Book."))
 		if cint(self.from_receipt_no) > cint(self.to_receipt_no):
@@ -194,19 +226,48 @@ class Book(Document):
 		self.used_receipts = cint(self.used_receipts)
 		self.remaining_receipts = max(get_receipt_range_count(self.from_receipt_no, self.to_receipt_no) - self.used_receipts, 0)
 
-	def validate_stock_available_for_unissued_book(self):
-		if self.status:
+	def validate_book_serial_no(self):
+		if not self.book_serial_no:
 			return
 
-		if not self.coupon_type or not self.warehouse:
-			return
-
-		available_quantity = get_available_coupon_book_stock(self.coupon_type, self.warehouse, self.name)
-		if available_quantity <= 0:
+		serial_no = frappe.db.get_value(
+			"Serial No",
+			self.book_serial_no,
+			["item_code", "warehouse"],
+			as_dict=True,
+		)
+		if not serial_no:
+			frappe.throw(frappe._("Book Serial No {0} was not found.").format(self.book_serial_no))
+		if serial_no.item_code != self.item:
 			frappe.throw(
-				frappe._("No unallocated Book stock is available for {0} in warehouse {1}.").format(
-					self.coupon_type,
+				frappe._("Book Serial No {0} belongs to Item {1}, not {2}.").format(
+					self.book_serial_no,
+					serial_no.item_code,
+					self.item,
+				)
+			)
+
+		if not self.stock_entry and serial_no.warehouse != self.warehouse:
+			frappe.throw(
+				frappe._("Book Serial No {0} is not available in Warehouse {1}.").format(
+					self.book_serial_no,
 					self.warehouse,
+				)
+			)
+
+		existing_book = frappe.db.exists(
+			"Book",
+			{
+				"book_serial_no": self.book_serial_no,
+				"name": ["!=", self.name],
+				"docstatus": ["!=", 2],
+			},
+		)
+		if existing_book:
+			frappe.throw(
+				frappe._("Book Serial No {0} is already linked with Book {1}.").format(
+					self.book_serial_no,
+					existing_book,
 				)
 			)
 
@@ -242,12 +303,18 @@ class Book(Document):
 			frappe.throw(frappe._("Cash denomination total must match Total Amount Collected."))
 
 	def set_accounting_details(self):
+		if not self.is_coupon_book():
+			return
+
 		if self.status not in ("Returned", "Closed"):
 			return
 
 		set_collection_accounting_details(self, "Book", self.coupon_type)
 
 	def validate_accounting_details(self):
+		if not self.is_coupon_book():
+			return
+
 		if self.status not in ("Returned", "Closed"):
 			return
 
@@ -258,22 +325,6 @@ class Book(Document):
 			self.collected_amount,
 		)
 
-	def validate_inventory_for_issue(self):
-		if self.status != "Issued" or self.get_previous_status() == "Issued":
-			return
-
-		if not self.warehouse:
-			frappe.throw(frappe._("Warehouse is required before issuing a Book."))
-
-		available_quantity = get_book_balance(self.coupon_type, self.warehouse)
-		if available_quantity <= 0:
-			frappe.throw(
-				frappe._("No Book stock is available for {0} in warehouse {1}.").format(
-					self.coupon_type,
-					self.warehouse,
-				)
-			)
-
 	def validate_issue_permission(self):
 		if self.status != "Issued" or self.get_previous_status() == "Issued":
 			return
@@ -281,15 +332,10 @@ class Book(Document):
 		if FINANCE_MANAGER_ROLE not in frappe.get_roles():
 			frappe.throw(frappe._("Only Finance Manager can issue a Book."))
 
-	def create_inventory_entry_for_status_change(self):
-		previous_status = self.get_previous_status()
-		if previous_status == self.status:
+	def create_journal_entry_for_return(self):
+		if not self.is_coupon_book():
 			return
 
-		if self.status == "Issued":
-			self.create_inventory_entry("Issue", -1)
-
-	def create_journal_entry_for_return(self):
 		if self.status != "Returned":
 			return
 
@@ -309,23 +355,6 @@ class Book(Document):
 	def get_previous_status(self):
 		previous_doc = self.get_doc_before_save()
 		return previous_doc.status if previous_doc else None
-
-	def create_inventory_entry(self, movement_type, signed_quantity):
-		if not frappe.db.table_exists("Book Inventory"):
-			return
-
-		frappe.get_doc(
-			{
-				"doctype": "Book Inventory",
-				"posting_date": now_datetime(),
-				"coupon_type": self.coupon_type,
-				"warehouse": self.warehouse,
-				"movement_type": movement_type,
-				"quantity": abs(cint(signed_quantity)),
-				"signed_quantity": cint(signed_quantity),
-				"volunteer_name": self.volunteer_name,
-			}
-		).insert(ignore_permissions=True)
 
 	def get_collection_accounting_remarks(self):
 		return "Book: {0} | Coupon Type: {1} | Warehouse: {2} | Volunteer: {3}".format(
@@ -347,10 +376,48 @@ def issue_book(book):
 	doc = frappe.get_doc("Book", book)
 	if doc.status:
 		frappe.throw(frappe._("Only unissued Books can be issued."))
+	if doc.stock_entry:
+		frappe.throw(frappe._("Book {0} is already linked with Stock Entry {1}.").format(doc.name, doc.stock_entry))
 
+	doc.validate_book_stock_details()
+	doc.validate_book_serial_no()
+	stock_entry = create_book_issue_stock_entry(doc)
+	doc.stock_entry = stock_entry.name
 	doc.status = "Issued"
 	doc.save()
 	return doc.as_dict()
+
+
+def create_book_issue_stock_entry(doc):
+	stock_entry = frappe.get_doc(
+		{
+			"doctype": "Stock Entry",
+			"company": doc.company or get_default_company(),
+			"stock_entry_type": "Material Issue",
+			"purpose": "Material Issue",
+			"from_warehouse": doc.warehouse,
+			"posting_date": today(),
+			"remarks": "Book Issue: {0} | Type: {1} | Serial No: {2} | Issued To: {3}".format(
+				doc.name,
+				doc.book_type,
+				doc.book_serial_no,
+				doc.issued_to_employee,
+			),
+			"items": [
+				{
+					"item_code": doc.item,
+					"s_warehouse": doc.warehouse,
+					"qty": 1,
+					"use_serial_batch_fields": 1,
+					"serial_no": doc.book_serial_no,
+				}
+			],
+		}
+	)
+	stock_entry.flags.ignore_permissions = True
+	stock_entry.insert(ignore_permissions=True)
+	stock_entry.submit()
+	return stock_entry
 
 
 @frappe.whitelist()
@@ -525,63 +592,6 @@ def set_cash_denominations(doc, denominations):
 			)
 
 
-@frappe.whitelist()
-def get_available_coupon_book_stock(coupon_type, warehouse, exclude_book=None):
-	if not coupon_type or not warehouse:
-		return 0
-
-	total_stock = get_total_coupon_book_stock(coupon_type, warehouse)
-	created_books = get_created_coupon_book_count(coupon_type, warehouse, exclude_book)
-	return max(total_stock - created_books, 0)
-
-
-def get_total_coupon_book_stock(coupon_type, warehouse):
-	if not frappe.db.table_exists("Book Inventory"):
-		return 0
-
-	return cint(
-		frappe.db.get_value(
-			"Book Inventory",
-			{
-				"coupon_type": coupon_type,
-				"warehouse": warehouse,
-				"movement_type": "Receipt",
-				"docstatus": ["!=", 2],
-			},
-			"sum(quantity)",
-		)
-	)
-
-
-def get_created_coupon_book_count(coupon_type, warehouse, exclude_book=None):
-	filters = {
-		"coupon_type": coupon_type,
-		"warehouse": warehouse,
-		"docstatus": ["!=", 2],
-	}
-	if exclude_book:
-		filters["name"] = ["!=", exclude_book]
-
-	return cint(frappe.db.count("Book", filters))
-
-
-def get_book_balance(coupon_type, warehouse):
-	if not frappe.db.table_exists("Book Inventory"):
-		return 0
-
-	return cint(
-		frappe.db.get_value(
-			"Book Inventory",
-			{
-				"coupon_type": coupon_type,
-				"warehouse": warehouse,
-				"docstatus": ["!=", 2],
-			},
-			"sum(signed_quantity)",
-		)
-	)
-
-
 def get_receipt_range_count(from_receipt_no, to_receipt_no):
 	try:
 		return max(cint(to_receipt_no) - cint(from_receipt_no) + 1, 0)
@@ -628,19 +638,12 @@ def is_coupon_item(item):
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
-def get_coupon_items(doctype, txt, searchfield, start, page_len, filters):
+def get_book_items(doctype, txt, searchfield, start, page_len, filters):
+	filters = frappe._dict(filters or {})
 	search = "%%%s%%" % txt
-	return frappe.db.sql(
-		"""
-		select item.name, item.item_name, item.item_group
-		from `tabItem` item
-		where item.disabled = 0
-			and (
-				item.name like %(search)s
-				or item.item_code like %(search)s
-				or item.item_name like %(search)s
-				or item.item_group like %(search)s
-			)
+	coupon_condition = ""
+	if filters.get("book_type") == BOOK_TYPE_COUPON:
+		coupon_condition = """
 			and (
 				item.name like '%%Coupon%%'
 				or item.item_code like '%%Coupon%%'
@@ -663,15 +666,75 @@ def get_coupon_items(doctype, txt, searchfield, start, page_len, filters):
 				or item.item_name like '%%Fidya%%'
 				or item.item_group like '%%Fidya%%'
 			)
+		"""
+
+	return frappe.db.sql(
+		"""
+		select item.name, item.item_name, item.item_group
+		from `tabItem` item
+		where item.disabled = 0
+			and item.is_stock_item = 1
+			and item.has_serial_no = 1
+			and (
+				item.name like %(search)s
+				or item.item_code like %(search)s
+				or item.item_name like %(search)s
+				or item.item_group like %(search)s
+			)
+			{coupon_condition}
 		order by item.name
 		limit %(start)s, %(page_len)s
-		""",
+		""".format(coupon_condition=coupon_condition),
 		{
 			"search": search,
 			"start": cint(start),
 			"page_len": cint(page_len),
 		},
 	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_available_book_serial_nos(doctype, txt, searchfield, start, page_len, filters):
+	filters = frappe._dict(filters or {})
+	if not filters.get("item") or not filters.get("warehouse"):
+		return []
+
+	search = "%%%s%%" % txt
+	current_book = filters.get("book")
+	return frappe.db.sql(
+		"""
+		select serial.name, serial.item_code, serial.warehouse
+		from `tabSerial No` serial
+		where serial.item_code = %(item)s
+			and serial.warehouse = %(warehouse)s
+			and serial.name like %(search)s
+			and not exists (
+				select book.name
+				from `tabBook` book
+				where book.book_serial_no = serial.name
+					and book.docstatus != 2
+					and (%(book)s is null or book.name != %(book)s)
+			)
+		order by serial.name
+		limit %(start)s, %(page_len)s
+		""",
+		{
+			"item": filters.get("item"),
+			"warehouse": filters.get("warehouse"),
+			"book": current_book,
+			"search": search,
+			"start": cint(start),
+			"page_len": cint(page_len),
+		},
+	)
+
+
+@frappe.whitelist()
+def get_book_stock_qty(item=None, warehouse=None):
+	if not item or not warehouse:
+		return 0
+	return flt(frappe.db.get_value("Bin", {"item_code": item, "warehouse": warehouse}, "actual_qty") or 0)
 
 
 @frappe.whitelist()

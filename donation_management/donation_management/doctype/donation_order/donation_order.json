@@ -20,6 +20,7 @@
   "is_mohasil_collection",
   "mohasil_section",
   "mohasil",
+  "donation_book",
   "manual_receipt_number",
   "mohasil_column_break",
   "manual_receipt_date",
@@ -179,6 +180,15 @@
    "label": "Mohasil",
    "mandatory_depends_on": "eval:doc.is_mohasil_collection",
    "options": "Employee"
+  },
+  {
+   "depends_on": "eval:doc.is_mohasil_collection",
+   "fieldname": "donation_book",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Donation Book",
+   "mandatory_depends_on": "eval:doc.is_mohasil_collection",
+   "options": "Book"
   },
   {
    "depends_on": "eval:doc.is_mohasil_collection",

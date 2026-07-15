@@ -196,6 +196,7 @@ class DonationOrder(Document):
 
 		if not cint(self.is_mohasil_collection):
 			self.mohasil = None
+			self.donation_book = None
 			self.manual_receipt_number = None
 			self.manual_receipt_date = None
 			self.set("cash_denominations", [])
@@ -210,6 +211,11 @@ class DonationOrder(Document):
 		if not self.mohasil:
 			frappe.throw(frappe._("Mohasil is required for Mohasil Collection."))
 
+		if not self.donation_book:
+			frappe.throw(frappe._("Donation Book is required for Mohasil Collection."))
+
+		self.validate_donation_book_for_mohasil()
+
 		if not self.manual_receipt_number:
 			frappe.throw(frappe._("Manual Receipt Number is required for Mohasil Collection."))
 
@@ -219,6 +225,7 @@ class DonationOrder(Document):
 		existing_order = frappe.db.exists(
 			"Donation Order",
 			{
+				"donation_book": self.donation_book,
 				"manual_receipt_number": self.manual_receipt_number,
 				"name": ["!=", self.name],
 				"docstatus": ["!=", 2],
@@ -226,9 +233,32 @@ class DonationOrder(Document):
 		)
 		if existing_order:
 			frappe.throw(
-				frappe._("Manual Receipt Number {0} is already used in Donation Order {1}.").format(
+				frappe._("Manual Receipt Number {0} is already used for Donation Book {1} in Donation Order {2}.").format(
 					self.manual_receipt_number,
+					self.donation_book,
 					existing_order,
+				)
+			)
+
+	def validate_donation_book_for_mohasil(self):
+		book = frappe.db.get_value(
+			"Book",
+			self.donation_book,
+			["book_type", "status", "issued_to_employee"],
+			as_dict=True,
+		)
+		if not book:
+			frappe.throw(frappe._("Donation Book {0} was not found.").format(self.donation_book))
+		if book.book_type != "Donation Book":
+			frappe.throw(frappe._("Book {0} is not a Donation Book.").format(self.donation_book))
+		if book.status != "Issued":
+			frappe.throw(frappe._("Donation Book {0} must be Issued.").format(self.donation_book))
+		if book.issued_to_employee != self.mohasil:
+			frappe.throw(
+				frappe._("Donation Book {0} is issued to {1}, not selected Mohasil {2}.").format(
+					self.donation_book,
+					book.issued_to_employee or frappe._("nobody"),
+					self.mohasil,
 				)
 			)
 
@@ -1027,6 +1057,7 @@ class DonationOrder(Document):
 			"donor_name",
 			"is_mohasil_collection",
 			"mohasil",
+			"donation_book",
 			"manual_receipt_number",
 			"manual_receipt_date",
 			"company",
