@@ -22,9 +22,15 @@ class DonationClosing(Document):
 	def on_submit(self):
 		if not self.closing_details:
 			frappe.throw(frappe._("Add at least one pending cash donation before submitting."))
+		if self.status != "Received" or not self.received_by:
+			frappe.throw(frappe._("Donation Closing must be received before submission."))
 
-		self.status = "Submitted"
+		self.status = "Deposited"
+		self.submitted_by = frappe.session.user
+		self.submitted_on = now_datetime()
 		self.db_set("status", self.status, update_modified=False)
+		self.db_set("submitted_by", self.submitted_by, update_modified=False)
+		self.db_set("submitted_on", self.submitted_on, update_modified=False)
 		self.notify_finance_team()
 
 	def on_cancel(self):
@@ -109,9 +115,26 @@ class DonationClosing(Document):
 		}
 
 	@frappe.whitelist()
+	def receive_closing(self):
+		if self.is_new():
+			frappe.throw(frappe._("Save Donation Closing before receiving it."))
+		if self.docstatus != 0:
+			frappe.throw(frappe._("Only draft Donation Closing can be received."))
+		if self.status not in ("", "Draft"):
+			frappe.throw(frappe._("Only Draft Donation Closing can be received."))
+		if not self.closing_details:
+			frappe.throw(frappe._("Add at least one pending cash donation before receiving."))
+
+		self.received_by = frappe.session.user
+		self.received_on = now_datetime()
+		self.status = "Received"
+		self.save(ignore_permissions=True)
+		return self.name
+
+	@frappe.whitelist()
 	def submit_bank_deposit(self, bank_deposit_date=None, bank_deposit_reference=None, bank_account=None):
 		self.validate_finance_permission()
-		if self.docstatus != 1 or self.status not in ("Submitted", "Pending Bank Deposit"):
+		if self.docstatus != 1 or self.status not in ("Submitted", "Deposited", "Pending Bank Deposit"):
 			frappe.throw(frappe._("Only submitted closings pending bank deposit can be processed."))
 
 		if bank_deposit_date:
@@ -299,7 +322,13 @@ def get_pending_donation_orders(company, closing_date=None, exclude_closing=None
 		"accounting_status": "Posted",
 	}
 	if closing_date:
-		filters["donation_posting_date"] = closing_date
+		filters["donation_posting_date"] = [
+			"between",
+			[
+				"{0} 00:00:00".format(closing_date),
+				"{0} 23:59:59".format(closing_date),
+			],
+		]
 
 	orders = frappe.get_all(
 		"Donation Order",

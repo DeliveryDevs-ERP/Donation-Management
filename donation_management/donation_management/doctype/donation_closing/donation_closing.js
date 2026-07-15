@@ -23,11 +23,15 @@ frappe.ui.form.on("Donation Closing", {
 	},
 
 	refresh(frm) {
-		if (frm.is_new() || frm.doc.docstatus === 0) {
+		if (frm.is_new() || (frm.doc.docstatus === 0 && ["", "Draft"].includes(frm.doc.status || ""))) {
 			frm.add_custom_button(__("Fetch Pending Cash Donations"), () => fetch_pending(frm));
 		}
 
-		if (frm.doc.docstatus === 1 && ["Submitted", "Pending Bank Deposit"].includes(frm.doc.status)) {
+		if (!frm.is_new() && frm.doc.docstatus === 0 && ["", "Draft"].includes(frm.doc.status || "")) {
+			frm.add_custom_button(__("Receive Closing"), () => receive_closing(frm), __("Actions"));
+		}
+
+		if (frm.doc.docstatus === 1 && ["Submitted", "Deposited", "Pending Bank Deposit"].includes(frm.doc.status)) {
 			const roles = frappe.user_roles || [];
 			if (has_any_role(roles, ["Finance Manager", "CFO", "System Manager"])) {
 				frm.add_custom_button(__("Record Bank Deposit"), () => show_bank_deposit_dialog(frm));
@@ -95,6 +99,18 @@ function apply_fetch_result(frm, result) {
 	frm.set_value("total_amount", result.total_amount || 0);
 	frm.set_value("pending_items_count", result.count || 0);
 	frm.refresh_field("closing_details");
+}
+
+function receive_closing(frm) {
+	frappe.call({
+		doc: frm.doc,
+		method: "receive_closing",
+		freeze: true,
+		callback() {
+			frm.reload_doc();
+			frappe.show_alert({ message: __("Donation Closing received"), indicator: "green" });
+		},
+	});
 }
 
 function show_bank_deposit_dialog(frm) {
