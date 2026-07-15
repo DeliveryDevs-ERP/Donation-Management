@@ -48,6 +48,7 @@ class Donor(NestedSet):
 		self.set_donor_phone_digits()
 		self.set_donor_email()
 		self.validate_contact_details()
+		self.validate_donor_email_format()
 		self.validate_unique_donor_phone()
 		self.validate_phone_not_used_by_trustee()
 		self.validate_unique_donor_email()
@@ -101,6 +102,13 @@ class Donor(NestedSet):
 	def set_donor_email(self):
 		if self.donor_email:
 			self.donor_email = self.donor_email.strip().lower()
+
+	def validate_donor_email_format(self):
+		if not self.donor_email:
+			return
+
+		if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", self.donor_email):
+			frappe.throw(frappe._("Donor Email must be a valid email address and include @."))
 
 	def validate_contact_details(self):
 		if not is_donor_contact_required():

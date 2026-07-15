@@ -24,6 +24,9 @@ class Trustee(NestedSet):
 		super().on_update()
 
 	def normalize_cnic(self):
+		if str(self.cnic or "").strip().startswith("-"):
+			frappe.throw(frappe._("Trustee CNIC cannot be negative."))
+
 		cnic_digits = normalize_digits(self.cnic)
 		if cnic_digits and len(cnic_digits) != 13:
 			frappe.throw(frappe._("Trustee CNIC must contain 13 digits."))
@@ -52,6 +55,8 @@ class Trustee(NestedSet):
 	def normalize_old_membership_id(self):
 		if self.old_membership_id:
 			self.old_membership_id = self.old_membership_id.strip()
+			if self.old_membership_id.startswith("-"):
+				frappe.throw(frappe._("Old Membership ID cannot be negative."))
 
 	def validate_unique_old_membership_id(self):
 		if not self.old_membership_id:

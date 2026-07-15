@@ -14,9 +14,14 @@ BOX_SHAPES = {
 
 class DonationBox(Document):
 	def validate(self):
+		self.validate_box_number()
 		self.set_box_shape()
 		self.set_box_code()
 		self.validate_unique_box_number()
+
+	def validate_box_number(self):
+		if str(self.box_number or "").strip().startswith("-"):
+			frappe.throw(frappe._("Box Number cannot be negative."))
 
 	def on_submit(self):
 		self.create_box_collection()

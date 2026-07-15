@@ -185,6 +185,8 @@ class Book(Document):
 			)
 
 	def validate_page_counts(self):
+		if cint(self.total_pages) < 0:
+			frappe.throw(frappe._("Total Pages cannot be negative."))
 		if cint(self.total_pages) <= 0:
 			frappe.throw(frappe._("Total Pages must be greater than zero."))
 		if cint(self.used_pages) < 0:
@@ -219,11 +221,21 @@ class Book(Document):
 	def validate_donation_book_details(self):
 		validate_mohasil_employee(self.issued_to_employee, "Issued To Employee")
 
+		if not is_donation_book_item(self.item):
+			frappe.throw(frappe._("Only Donation Book Items can be selected for Donation Book."))
+
 		if not self.from_receipt_no or not self.to_receipt_no:
 			frappe.throw(frappe._("From Receipt No and To Receipt No are required for Donation Book."))
-		if cint(self.from_receipt_no) > cint(self.to_receipt_no):
+
+		from_receipt_no = get_receipt_number_int(self.from_receipt_no, "From Receipt No")
+		to_receipt_no = get_receipt_number_int(self.to_receipt_no, "To Receipt No")
+		if from_receipt_no > to_receipt_no:
 			frappe.throw(frappe._("From Receipt No cannot be greater than To Receipt No."))
-		self.used_receipts = cint(self.used_receipts)
+
+		if not self.is_new():
+			self.used_receipts = get_donation_book_used_receipts(self.name)
+		else:
+			self.used_receipts = cint(self.used_receipts)
 		self.remaining_receipts = max(get_receipt_range_count(self.from_receipt_no, self.to_receipt_no) - self.used_receipts, 0)
 
 	def validate_book_serial_no(self):
@@ -553,6 +565,10 @@ def close_book(book):
 	doc = frappe.get_doc("Book", book)
 	if doc.status != "Returned":
 		frappe.throw(frappe._("Only returned Books can be closed."))
+	if doc.is_donation_book():
+		update_donation_book_receipt_usage(doc.name)
+		doc.reload()
+		validate_donation_book_order_total_matches_return(doc)
 
 	doc.status = "Closed"
 	doc.save()
@@ -593,10 +609,113 @@ def set_cash_denominations(doc, denominations):
 
 
 def get_receipt_range_count(from_receipt_no, to_receipt_no):
-	try:
-		return max(cint(to_receipt_no) - cint(from_receipt_no) + 1, 0)
-	except Exception:
+	return max(
+		get_receipt_number_int(to_receipt_no, "To Receipt No")
+		- get_receipt_number_int(from_receipt_no, "From Receipt No")
+		+ 1,
+		0,
+	)
+
+
+def get_receipt_number_int(receipt_no, label):
+	receipt_no = str(receipt_no or "").strip()
+	if receipt_no.startswith("-"):
+		frappe.throw(frappe._("{0} cannot be negative.").format(frappe._(label)))
+	if not receipt_no or not receipt_no.isdigit():
+		frappe.throw(frappe._("{0} must contain digits only.").format(frappe._(label)))
+	return cint(receipt_no)
+
+
+def receipt_number_in_range(receipt_no, from_receipt_no, to_receipt_no):
+	receipt_no = get_receipt_number_int(receipt_no, "Manual Receipt Number")
+	from_receipt_no = get_receipt_number_int(from_receipt_no, "From Receipt No")
+	to_receipt_no = get_receipt_number_int(to_receipt_no, "To Receipt No")
+	return from_receipt_no <= receipt_no <= to_receipt_no
+
+
+def get_donation_book_used_receipts(book, exclude_order=None):
+	if not book:
 		return 0
+
+	conditions = ["donation_book = %(book)s", "docstatus != 2", "ifnull(manual_receipt_number, '') != ''"]
+	values = {"book": book}
+	if exclude_order:
+		conditions.append("name != %(exclude_order)s")
+		values["exclude_order"] = exclude_order
+
+	return cint(
+		frappe.db.sql(
+			"""
+			select count(distinct manual_receipt_number)
+			from `tabDonation Order`
+			where {conditions}
+			""".format(conditions=" and ".join(conditions)),
+			values,
+		)[0][0]
+	)
+
+
+def get_donation_book_order_total(book, exclude_order=None):
+	if not book:
+		return 0
+
+	conditions = ["donation_book = %(book)s", "docstatus != 2"]
+	values = {"book": book}
+	if exclude_order:
+		conditions.append("name != %(exclude_order)s")
+		values["exclude_order"] = exclude_order
+
+	return flt(
+		frappe.db.sql(
+			"""
+			select sum(ifnull(donation_amount, 0))
+			from `tabDonation Order`
+			where {conditions}
+			""".format(conditions=" and ".join(conditions)),
+			values,
+		)[0][0]
+	)
+
+
+def update_donation_book_receipt_usage(book):
+	if not book or not frappe.db.exists("Book", book):
+		return
+
+	book_values = frappe.db.get_value(
+		"Book",
+		book,
+		["book_type", "from_receipt_no", "to_receipt_no"],
+		as_dict=True,
+	)
+	if not book_values or book_values.book_type != BOOK_TYPE_DONATION:
+		return
+
+	total_receipts = get_receipt_range_count(book_values.from_receipt_no, book_values.to_receipt_no)
+	used_receipts = get_donation_book_used_receipts(book)
+	remaining_receipts = max(total_receipts - used_receipts, 0)
+	frappe.db.set_value(
+		"Book",
+		book,
+		{
+			"used_receipts": used_receipts,
+			"remaining_receipts": remaining_receipts,
+		},
+		update_modified=False,
+	)
+
+
+def validate_donation_book_order_total_matches_return(doc):
+	order_total = get_donation_book_order_total(doc.name)
+	if flt(order_total, 2) != flt(doc.collected_amount, 2):
+		frappe.throw(
+			frappe._(
+				"Donation Book {0} cannot be closed because Donation Orders total {1}, but returned amount is {2}."
+			).format(
+				doc.name,
+				frappe.format_value(order_total, {"fieldtype": "Currency"}),
+				frappe.format_value(doc.collected_amount, {"fieldtype": "Currency"}),
+			)
+		)
 
 
 def get_coupon_type_from_item(item):
@@ -636,14 +755,33 @@ def is_coupon_item(item):
 	return "coupon" in search_text or get_coupon_type_from_item(item) in COUPON_COLORS
 
 
+def is_donation_book_item(item):
+	if not item:
+		return False
+
+	item_values = frappe.db.get_value(
+		"Item",
+		item,
+		["disabled", "item_code", "item_name", "item_group"],
+		as_dict=True,
+	)
+	if not item_values or cint(item_values.disabled):
+		return False
+
+	search_text = " ".join(
+		filter(None, [item, item_values.item_code, item_values.item_name, item_values.item_group])
+	).lower()
+	return "donation book" in search_text or "donationbook" in search_text
+
+
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_book_items(doctype, txt, searchfield, start, page_len, filters):
 	filters = frappe._dict(filters or {})
 	search = "%%%s%%" % txt
-	coupon_condition = ""
+	book_type_condition = ""
 	if filters.get("book_type") == BOOK_TYPE_COUPON:
-		coupon_condition = """
+		book_type_condition = """
 			and (
 				item.name like '%%Coupon%%'
 				or item.item_code like '%%Coupon%%'
@@ -667,6 +805,19 @@ def get_book_items(doctype, txt, searchfield, start, page_len, filters):
 				or item.item_group like '%%Fidya%%'
 			)
 		"""
+	elif filters.get("book_type") == BOOK_TYPE_DONATION:
+		book_type_condition = """
+			and (
+				item.name like '%%Donation Book%%'
+				or item.item_code like '%%Donation Book%%'
+				or item.item_name like '%%Donation Book%%'
+				or item.item_group like '%%Donation Book%%'
+				or item.name like '%%DonationBook%%'
+				or item.item_code like '%%DonationBook%%'
+				or item.item_name like '%%DonationBook%%'
+				or item.item_group like '%%DonationBook%%'
+			)
+		"""
 
 	return frappe.db.sql(
 		"""
@@ -681,10 +832,10 @@ def get_book_items(doctype, txt, searchfield, start, page_len, filters):
 				or item.item_name like %(search)s
 				or item.item_group like %(search)s
 			)
-			{coupon_condition}
+			{book_type_condition}
 		order by item.name
 		limit %(start)s, %(page_len)s
-		""".format(coupon_condition=coupon_condition),
+		""".format(book_type_condition=book_type_condition),
 		{
 			"search": search,
 			"start": cint(start),

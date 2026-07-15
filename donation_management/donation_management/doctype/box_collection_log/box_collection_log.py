@@ -15,6 +15,9 @@ class BoxCollectionLog(Document):
 			self.validate_collection_denominations()
 
 	def validate_collection_denominations(self):
+		if flt(self.collected_amount) < 0:
+			frappe.throw(frappe._("Collected Amount cannot be negative."))
+
 		total = 0
 		for row in self.cash_denominations:
 			denomination = cint(row.denomination)

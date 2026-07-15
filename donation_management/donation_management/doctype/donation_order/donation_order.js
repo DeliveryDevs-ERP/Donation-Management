@@ -36,8 +36,9 @@ frappe.ui.form.on("Donation Order", {
 		frm.set_query("donation_book", () => ({
 			filters: {
 				book_type: "Donation Book",
-				status: "Issued",
+				status: "Returned",
 				issued_to_employee: frm.doc.mohasil || "",
+				remaining_receipts: [">", 0],
 			},
 		}));
 

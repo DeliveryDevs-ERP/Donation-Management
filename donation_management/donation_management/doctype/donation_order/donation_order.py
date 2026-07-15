@@ -20,6 +20,13 @@ from donation_management.donation_management.api import (
 	get_mode_of_payment_account,
 	get_receiving_account_donation_type,
 )
+from donation_management.donation_management.doctype.book.book import (
+	get_donation_book_order_total,
+	get_donation_book_used_receipts,
+	get_receipt_range_count,
+	receipt_number_in_range,
+	update_donation_book_receipt_usage,
+)
 
 
 SPONSORSHIP_PURPOSE = "Sponsorship"
@@ -69,6 +76,7 @@ class DonationOrder(Document):
 		self.set_sponsorship_allocations()
 		self.validate_beneficiary()
 		self.set_total_donation()
+		self.validate_donation_book_amount_limit()
 		self.validate_cash_denominations()
 		self.set_accounting_details()
 		self.set_pdc_details()
@@ -76,7 +84,7 @@ class DonationOrder(Document):
 		self.validate_posted_accounting_locked()
 
 	def on_update(self):
-		pass
+		self.update_linked_donation_book_usage()
 
 	def on_submit(self):
 		if self.is_pending_pdc() and getdate(self.cheque_deposit_date) > getdate(today()):
@@ -97,6 +105,7 @@ class DonationOrder(Document):
 
 	def on_cancel(self):
 		self.cancel_linked_journal_entry()
+		self.update_linked_donation_book_usage()
 
 	def on_trash(self):
 		self.cancel_linked_journal_entry()
@@ -190,6 +199,8 @@ class DonationOrder(Document):
 	def validate_mohasil_details(self):
 		if self.manual_receipt_number:
 			self.manual_receipt_number = self.manual_receipt_number.strip()
+			if self.manual_receipt_number.startswith("-"):
+				frappe.throw(frappe._("Manual Receipt Number cannot be negative."))
 
 		if self.manual_receipt_number and not cint(self.is_mohasil_collection):
 			self.is_mohasil_collection = 1
@@ -244,15 +255,27 @@ class DonationOrder(Document):
 		book = frappe.db.get_value(
 			"Book",
 			self.donation_book,
-			["book_type", "status", "issued_to_employee"],
+			[
+				"book_type",
+				"status",
+				"issued_to_employee",
+				"start_date",
+				"from_receipt_no",
+				"to_receipt_no",
+				"remaining_receipts",
+			],
 			as_dict=True,
 		)
 		if not book:
 			frappe.throw(frappe._("Donation Book {0} was not found.").format(self.donation_book))
 		if book.book_type != "Donation Book":
 			frappe.throw(frappe._("Book {0} is not a Donation Book.").format(self.donation_book))
-		if book.status != "Issued":
-			frappe.throw(frappe._("Donation Book {0} must be Issued.").format(self.donation_book))
+		if book.status != "Returned":
+			frappe.throw(
+				frappe._("Donation Book {0} must be Returned before Donation Orders can be created against its receipts.").format(
+					self.donation_book
+				)
+			)
 		if book.issued_to_employee != self.mohasil:
 			frappe.throw(
 				frappe._("Donation Book {0} is issued to {1}, not selected Mohasil {2}.").format(
@@ -261,6 +284,69 @@ class DonationOrder(Document):
 					self.mohasil,
 				)
 			)
+
+		if self.manual_receipt_date and book.start_date and getdate(self.manual_receipt_date) < getdate(book.start_date):
+			frappe.throw(
+				frappe._("Manual Receipt Date cannot be before Donation Book Start Date {0}.").format(
+					frappe.format_value(book.start_date, {"fieldtype": "Date"})
+				)
+			)
+
+		if self.manual_receipt_number and not receipt_number_in_range(
+			self.manual_receipt_number,
+			book.from_receipt_no,
+			book.to_receipt_no,
+		):
+			frappe.throw(
+				frappe._("Manual Receipt Number {0} must be between {1} and {2} for Donation Book {3}.").format(
+					self.manual_receipt_number,
+					book.from_receipt_no,
+					book.to_receipt_no,
+					self.donation_book,
+				)
+			)
+
+		total_receipts = get_receipt_range_count(book.from_receipt_no, book.to_receipt_no)
+		used_receipts_without_current = get_donation_book_used_receipts(self.donation_book, exclude_order=self.name)
+		if used_receipts_without_current + 1 > total_receipts:
+			frappe.throw(frappe._("Donation Book {0} has no remaining receipts.").format(self.donation_book))
+
+	def validate_donation_book_amount_limit(self):
+		if not cint(self.is_mohasil_collection) or not self.donation_book:
+			return
+
+		book = frappe.db.get_value(
+			"Book",
+			self.donation_book,
+			["collected_amount"],
+			as_dict=True,
+		)
+		if not book:
+			return
+
+		current_total = get_donation_book_order_total(self.donation_book, exclude_order=self.name) + flt(self.donation_amount)
+		if flt(current_total, 2) > flt(book.collected_amount, 2):
+			frappe.throw(
+				frappe._(
+					"Donation Orders total {0} cannot exceed returned Donation Book amount {1} for {2}."
+				).format(
+					frappe.format_value(current_total, {"fieldtype": "Currency"}),
+					frappe.format_value(book.collected_amount, {"fieldtype": "Currency"}),
+					self.donation_book,
+				)
+			)
+
+	def update_linked_donation_book_usage(self):
+		books = set()
+		if self.donation_book:
+			books.add(self.donation_book)
+
+		previous_doc = self.get_doc_before_save()
+		if previous_doc and previous_doc.donation_book:
+			books.add(previous_doc.donation_book)
+
+		for book in books:
+			update_donation_book_receipt_usage(book)
 
 	def validate_cash_denominations(self):
 		if not cint(self.is_mohasil_collection):

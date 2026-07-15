@@ -28,12 +28,17 @@ class BoxCollection(Document):
 	def validate(self):
 		self.set_box_details()
 		self.populate_location_from_master()
+		self.validate_collected_amount()
 		self.validate_single_collection_per_box()
 		self.validate_status_change_uses_action()
 		self.validate_issued_fields_are_locked()
 		self.validate_mohasil_staff()
 		if not self.status:
 			self.status = "Available"
+
+	def validate_collected_amount(self):
+		if flt(self.collected_amount) < 0:
+			frappe.throw(frappe._("Collected Amount cannot be negative."))
 
 	def set_box_details(self):
 		if not self.box_number:
