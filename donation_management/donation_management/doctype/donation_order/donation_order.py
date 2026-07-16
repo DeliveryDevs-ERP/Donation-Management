@@ -427,14 +427,16 @@ class DonationOrder(Document):
 		frappe.throw(frappe._("Donation Book {0} has no receipt ranges configured.").format(self.donation_book))
 
 	def get_existing_donation_book_receipt_order(self, receipt_number):
-		serial_condition = ""
+		detail_serial_condition = ""
+		parent_serial_condition = ""
 		values = {
 			"donation_book": self.donation_book,
 			"current_order": self.name,
 			"receipt_number": receipt_number,
 		}
 		if self.donation_book_serial_no:
-			serial_condition = "and parent.donation_book_serial_no = %(donation_book_serial_no)s"
+			detail_serial_condition = "and parent.donation_book_serial_no = %(donation_book_serial_no)s"
+			parent_serial_condition = "and donation_book_serial_no = %(donation_book_serial_no)s"
 			values["donation_book_serial_no"] = self.donation_book_serial_no
 
 		existing = frappe.db.sql(
@@ -448,7 +450,7 @@ class DonationOrder(Document):
 				where parent.donation_book = %(donation_book)s
 					and parent.docstatus != 2
 					and parent.name != %(current_order)s
-					{serial_condition}
+					{detail_serial_condition}
 					and detail.manual_receipt_number = %(receipt_number)s
 				union
 				select name
@@ -456,11 +458,14 @@ class DonationOrder(Document):
 				where donation_book = %(donation_book)s
 					and docstatus != 2
 					and name != %(current_order)s
-					{serial_condition}
+					{parent_serial_condition}
 					and manual_receipt_number = %(receipt_number)s
 			) existing_order
 			limit 1
-			""".format(serial_condition=serial_condition),
+			""".format(
+				detail_serial_condition=detail_serial_condition,
+				parent_serial_condition=parent_serial_condition,
+			),
 			values,
 		)
 		return existing[0][0] if existing else None
