@@ -896,7 +896,13 @@ def receipt_number_in_range(receipt_no, from_receipt_no, to_receipt_no):
 	return from_receipt_no <= receipt_no <= to_receipt_no
 
 
-def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=None, to_receipt_no=None):
+def get_donation_book_used_receipts(
+	book,
+	exclude_order=None,
+	from_receipt_no=None,
+	to_receipt_no=None,
+	donation_book_serial_no=None,
+):
 	if not book:
 		return 0
 
@@ -905,6 +911,10 @@ def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=No
 	if exclude_order:
 		exclude_condition = "and parent.name != %(exclude_order)s"
 		values["exclude_order"] = exclude_order
+	serial_condition = ""
+	if donation_book_serial_no:
+		serial_condition = "and parent.donation_book_serial_no = %(donation_book_serial_no)s"
+		values["donation_book_serial_no"] = donation_book_serial_no
 
 	receipt_rows = frappe.db.sql(
 		"""
@@ -918,6 +928,7 @@ def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=No
 				and parent.docstatus != 2
 				and ifnull(detail.manual_receipt_number, '') != ''
 				{exclude_condition}
+				{serial_condition}
 			union
 			select parent.manual_receipt_number as receipt_number
 			from `tabDonation Order` parent
@@ -925,8 +936,12 @@ def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=No
 				and parent.docstatus != 2
 				and ifnull(parent.manual_receipt_number, '') != ''
 				{exclude_condition}
+				{serial_condition}
 		) receipts
-		""".format(exclude_condition=exclude_condition),
+		""".format(
+			exclude_condition=exclude_condition,
+			serial_condition=serial_condition,
+		),
 		values,
 	)
 
@@ -942,7 +957,7 @@ def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=No
 	)
 
 
-def get_donation_book_order_total(book, exclude_order=None):
+def get_donation_book_order_total(book, exclude_order=None, donation_book_serial_no=None):
 	if not book:
 		return 0
 
@@ -951,6 +966,9 @@ def get_donation_book_order_total(book, exclude_order=None):
 	if exclude_order:
 		conditions.append("name != %(exclude_order)s")
 		values["exclude_order"] = exclude_order
+	if donation_book_serial_no:
+		conditions.append("donation_book_serial_no = %(donation_book_serial_no)s")
+		values["donation_book_serial_no"] = donation_book_serial_no
 
 	return flt(
 		frappe.db.sql(
@@ -984,7 +1002,7 @@ def update_donation_book_receipt_usage(book):
 			"parenttype": "Book",
 			"parentfield": "assigned_books",
 		},
-		fields=["name", "from_receipt_no", "to_receipt_no"],
+		fields=["name", "book_serial_no", "from_receipt_no", "to_receipt_no"],
 	)
 	total_receipts = 0
 	if assigned_rows:
@@ -994,6 +1012,7 @@ def update_donation_book_receipt_usage(book):
 				book,
 				from_receipt_no=row.from_receipt_no,
 				to_receipt_no=row.to_receipt_no,
+				donation_book_serial_no=row.book_serial_no,
 			)
 			row_remaining_receipts = max(row_total_receipts - row_used_receipts, 0)
 			frappe.db.set_value(

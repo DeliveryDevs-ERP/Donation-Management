@@ -235,6 +235,7 @@ frappe.ui.form.on("Donation Order", {
 
 	donation_book_serial_no(frm) {
 		set_donation_book_from_serial(frm);
+		check_all_manual_receipt_duplicates(frm);
 	},
 
 	cash_denominations_add(frm) {
@@ -361,6 +362,10 @@ frappe.ui.form.on("Donation Order Purpose Detail", {
 
 	debit_account(frm) {
 		sync_primary_purpose_fields(frm);
+	},
+
+	manual_receipt_number(frm, cdt, cdn) {
+		check_manual_receipt_duplicate(frm, cdt, cdn);
 	},
 });
 
@@ -1152,6 +1157,72 @@ function set_donation_book_from_serial(frm) {
 		callback(response) {
 			const book = response.message || {};
 			set_value_if_changed(frm, "donation_book", book.name || "");
+			check_all_manual_receipt_duplicates(frm);
+		},
+	});
+}
+
+function check_all_manual_receipt_duplicates(frm) {
+	(frm.doc.purpose_details || []).forEach((row) => {
+		if (row.manual_receipt_number) {
+			check_manual_receipt_duplicate(frm, row.doctype, row.name);
+		}
+	});
+}
+
+function check_manual_receipt_duplicate(frm, cdt, cdn) {
+	const row = locals[cdt] && locals[cdt][cdn];
+	if (!row || !frm.doc.is_mohasil_collection || !frm.doc.donation_book_serial_no) {
+		return;
+	}
+
+	const receipt_number = String(row.manual_receipt_number || "").trim();
+	if (!receipt_number) {
+		return;
+	}
+
+	const duplicate_in_grid = (frm.doc.purpose_details || []).find(
+		(purpose_row) =>
+			purpose_row.name !== row.name
+			&& String(purpose_row.manual_receipt_number || "").trim() === receipt_number
+	);
+	if (duplicate_in_grid) {
+		frappe.msgprint({
+			title: __("Duplicate Manual Receipt Number"),
+			indicator: "red",
+			message: __("Manual Receipt Number {0} is already entered in another Purpose row.", [
+				receipt_number,
+			]),
+		});
+		return;
+	}
+
+	frappe.call({
+		method: "donation_management.donation_management.doctype.donation_order.donation_order.check_manual_receipt_duplicate",
+		args: {
+			donation_book: frm.doc.donation_book,
+			donation_book_serial_no: frm.doc.donation_book_serial_no,
+			manual_receipt_number: receipt_number,
+			current_order: frm.doc.name,
+		},
+		callback(response) {
+			const duplicate = response.message || {};
+			if (!duplicate.exists) {
+				return;
+			}
+
+			frappe.msgprint({
+				title: __("Duplicate Manual Receipt Number"),
+				indicator: "red",
+				message: __(
+					"Manual Receipt Number {0} is already used for Donation Book Serial No {1} in Donation Order {2}.",
+					[
+						receipt_number,
+						frm.doc.donation_book_serial_no,
+						duplicate.donation_order,
+					]
+				),
+			});
 		},
 	});
 }
