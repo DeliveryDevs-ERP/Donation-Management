@@ -72,6 +72,7 @@ class DonationOrder(Document):
 		self.set_donor_details()
 		self.validate_mohasil_details()
 		self.set_purpose_details()
+		self.validate_donation_book_receipts()
 		self.set_previous_sponsorship_balance()
 		self.set_sponsorship_allocations()
 		self.validate_beneficiary()
@@ -222,34 +223,47 @@ class DonationOrder(Document):
 		if not self.mohasil:
 			frappe.throw(frappe._("Mohasil is required for Mohasil Collection."))
 
+		if not self.donation_book_serial_no:
+			frappe.throw(frappe._("Donation Book is required for Mohasil Collection."))
+
+		self.set_donation_book_from_serial()
+
 		if not self.donation_book:
 			frappe.throw(frappe._("Donation Book is required for Mohasil Collection."))
 
 		self.validate_donation_book_for_mohasil()
 
-		if not self.manual_receipt_number:
-			frappe.throw(frappe._("Manual Receipt Number is required for Mohasil Collection."))
-
-		if not self.manual_receipt_number:
+	def set_donation_book_from_serial(self):
+		if not self.donation_book_serial_no:
 			return
 
-		existing_order = frappe.db.exists(
-			"Donation Order",
+		result = frappe.db.sql(
+			"""
+			select book.name
+			from `tabBook Assignment Detail` detail
+			inner join `tabBook` book
+				on book.name = detail.parent
+			where detail.book_serial_no = %(book_serial_no)s
+				and book.book_type = 'Donation Book'
+				and book.status = 'Returned'
+				and book.issued_to_employee = %(mohasil)s
+				and book.docstatus != 2
+				and detail.parentfield = 'assigned_books'
+			limit 1
+			""",
 			{
-				"donation_book": self.donation_book,
-				"manual_receipt_number": self.manual_receipt_number,
-				"name": ["!=", self.name],
-				"docstatus": ["!=", 2],
+				"book_serial_no": self.donation_book_serial_no,
+				"mohasil": self.mohasil,
 			},
 		)
-		if existing_order:
+		if not result:
 			frappe.throw(
-				frappe._("Manual Receipt Number {0} is already used for Donation Book {1} in Donation Order {2}.").format(
-					self.manual_receipt_number,
-					self.donation_book,
-					existing_order,
+				frappe._("Donation Book Serial No {0} is not available for Mohasil {1}.").format(
+					self.donation_book_serial_no,
+					self.mohasil,
 				)
 			)
+		self.donation_book = result[0][0]
 
 	def validate_donation_book_for_mohasil(self):
 		book = frappe.db.get_value(
@@ -292,24 +306,164 @@ class DonationOrder(Document):
 				)
 			)
 
-		if self.manual_receipt_number and not receipt_number_in_range(
-			self.manual_receipt_number,
-			book.from_receipt_no,
-			book.to_receipt_no,
-		):
-			frappe.throw(
-				frappe._("Manual Receipt Number {0} must be between {1} and {2} for Donation Book {3}.").format(
-					self.manual_receipt_number,
-					book.from_receipt_no,
-					book.to_receipt_no,
+		return book
+
+	def get_purpose_receipt_numbers(self):
+		self.move_legacy_parent_receipt_to_purpose_row()
+		receipt_numbers = []
+		for row in self.get("purpose_details", []):
+			receipt_number = str(row.get("manual_receipt_number") or "").strip()
+			row.manual_receipt_number = receipt_number
+			if receipt_number:
+				if receipt_number.startswith("-"):
+					frappe.throw(
+						frappe._("Manual Receipt Number cannot be negative in Purpose Detail row {0}.").format(row.idx)
+					)
+				receipt_numbers.append(receipt_number)
+		return receipt_numbers
+
+	def move_legacy_parent_receipt_to_purpose_row(self):
+		if not self.manual_receipt_number or len(self.get("purpose_details", [])) != 1:
+			return
+
+		row = self.purpose_details[0]
+		if not row.manual_receipt_number:
+			row.manual_receipt_number = self.manual_receipt_number
+
+	def validate_donation_book_receipts(self):
+		if not cint(self.is_mohasil_collection):
+			for row in self.get("purpose_details", []):
+				row.manual_receipt_number = None
+			return
+
+		book = self.validate_donation_book_for_mohasil()
+		receipt_numbers = self.get_purpose_receipt_numbers()
+
+		for row in self.get("purpose_details", []):
+			if not row.manual_receipt_number:
+				frappe.throw(
+					frappe._("Manual Receipt Number is required in Purpose Detail row {0} for Mohasil Collection.").format(
+						row.idx
+					)
+				)
+
+		unique_receipt_numbers = set(receipt_numbers)
+		receipt_ranges = self.get_donation_book_receipt_ranges(book)
+		for receipt_number in unique_receipt_numbers:
+			if not any(
+				receipt_number_in_range(
+					receipt_number,
+					receipt_range.from_receipt_no,
+					receipt_range.to_receipt_no,
+				)
+				for receipt_range in receipt_ranges
+			):
+				frappe.throw(
+					frappe._("Manual Receipt Number {0} is outside the receipt ranges assigned to Donation Book {1}.").format(
+						receipt_number,
+						self.donation_book,
+					)
+				)
+
+			existing_order = self.get_existing_donation_book_receipt_order(receipt_number)
+			if existing_order:
+				frappe.throw(
+					frappe._(
+						"Manual Receipt Number {0} is already used for Donation Book {1} in Donation Order {2}."
+					).format(
+						receipt_number,
 					self.donation_book,
+					existing_order,
 				)
 			)
 
-		total_receipts = get_receipt_range_count(book.from_receipt_no, book.to_receipt_no)
+		total_receipts = sum(
+			get_receipt_range_count(receipt_range.from_receipt_no, receipt_range.to_receipt_no)
+			for receipt_range in receipt_ranges
+		)
 		used_receipts_without_current = get_donation_book_used_receipts(self.donation_book, exclude_order=self.name)
-		if used_receipts_without_current + 1 > total_receipts:
+		if used_receipts_without_current + len(unique_receipt_numbers) > total_receipts:
 			frappe.throw(frappe._("Donation Book {0} has no remaining receipts.").format(self.donation_book))
+
+	def get_donation_book_receipt_ranges(self, book):
+		if self.donation_book_serial_no:
+			serial_range = frappe.db.get_value(
+				"Book Assignment Detail",
+				{
+					"parent": self.donation_book,
+					"parenttype": "Book",
+					"parentfield": "assigned_books",
+					"book_serial_no": self.donation_book_serial_no,
+				},
+				["from_receipt_no", "to_receipt_no"],
+				as_dict=True,
+			)
+			if serial_range and serial_range.from_receipt_no and serial_range.to_receipt_no:
+				return [serial_range]
+
+		assigned_ranges = frappe.get_all(
+			"Book Assignment Detail",
+			filters={
+				"parent": self.donation_book,
+				"parenttype": "Book",
+				"parentfield": "assigned_books",
+			},
+			fields=["from_receipt_no", "to_receipt_no"],
+			order_by="idx asc",
+		)
+		assigned_ranges = [
+			row for row in assigned_ranges
+			if row.from_receipt_no and row.to_receipt_no
+		]
+		if assigned_ranges:
+			return assigned_ranges
+
+		if book.from_receipt_no and book.to_receipt_no:
+			return [frappe._dict({
+				"from_receipt_no": book.from_receipt_no,
+				"to_receipt_no": book.to_receipt_no,
+			})]
+
+		frappe.throw(frappe._("Donation Book {0} has no receipt ranges configured.").format(self.donation_book))
+
+	def get_existing_donation_book_receipt_order(self, receipt_number):
+		serial_condition = ""
+		values = {
+			"donation_book": self.donation_book,
+			"current_order": self.name,
+			"receipt_number": receipt_number,
+		}
+		if self.donation_book_serial_no:
+			serial_condition = "and parent.donation_book_serial_no = %(donation_book_serial_no)s"
+			values["donation_book_serial_no"] = self.donation_book_serial_no
+
+		existing = frappe.db.sql(
+			"""
+			select existing_order.name
+			from (
+				select parent.name
+				from `tabDonation Order` parent
+				inner join `tabDonation Order Purpose Detail` detail
+					on detail.parent = parent.name
+				where parent.donation_book = %(donation_book)s
+					and parent.docstatus != 2
+					and parent.name != %(current_order)s
+					{serial_condition}
+					and detail.manual_receipt_number = %(receipt_number)s
+				union
+				select name
+				from `tabDonation Order`
+				where donation_book = %(donation_book)s
+					and docstatus != 2
+					and name != %(current_order)s
+					{serial_condition}
+					and manual_receipt_number = %(receipt_number)s
+			) existing_order
+			limit 1
+			""".format(serial_condition=serial_condition),
+			values,
+		)
+		return existing[0][0] if existing else None
 
 	def validate_donation_book_amount_limit(self):
 		if not cint(self.is_mohasil_collection) or not self.donation_book:
@@ -1143,6 +1297,7 @@ class DonationOrder(Document):
 			"donor_name",
 			"is_mohasil_collection",
 			"mohasil",
+			"donation_book_serial_no",
 			"donation_book",
 			"manual_receipt_number",
 			"manual_receipt_date",

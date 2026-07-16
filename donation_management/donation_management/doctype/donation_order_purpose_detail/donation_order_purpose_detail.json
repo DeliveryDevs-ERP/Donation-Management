@@ -10,6 +10,7 @@
   "donation_category",
   "donation_purpose",
   "amount",
+  "manual_receipt_number",
   "column_break_accounts",
   "debit_account",
   "purpose_path",
@@ -48,6 +49,12 @@
    "label": "Paid Amount",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "fieldname": "manual_receipt_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Manual Receipt Number"
   },
   {
    "fieldname": "column_break_accounts",

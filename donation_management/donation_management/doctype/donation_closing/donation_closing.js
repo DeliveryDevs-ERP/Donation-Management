@@ -2,16 +2,6 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on("Donation Closing", {
-	setup(frm) {
-		frm.set_query("bank_account", () => {
-			const filters = { is_group: 0, account_type: "Bank" };
-			if (frm.doc.company) {
-				filters.company = frm.doc.company;
-			}
-			return { filters };
-		});
-	},
-
 	onload(frm) {
 		if (frappe.route_options && frappe.route_options.show_fetch_alert) {
 			frappe.show_alert({
@@ -23,6 +13,8 @@ frappe.ui.form.on("Donation Closing", {
 	},
 
 	refresh(frm) {
+		frm.remove_custom_button(__("Record Bank Deposit"));
+
 		if (frm.is_new() || (frm.doc.docstatus === 0 && ["", "Draft"].includes(frm.doc.status || ""))) {
 			frm.add_custom_button(__("Fetch Pending Cash Donations"), () => fetch_pending(frm));
 		}
@@ -30,19 +22,8 @@ frappe.ui.form.on("Donation Closing", {
 		if (!frm.is_new() && frm.doc.docstatus === 0 && ["", "Draft"].includes(frm.doc.status || "")) {
 			frm.add_custom_button(__("Receive Closing"), () => receive_closing(frm), __("Actions"));
 		}
-
-		if (frm.doc.docstatus === 1 && ["Submitted", "Deposited", "Pending Bank Deposit"].includes(frm.doc.status)) {
-			const roles = frappe.user_roles || [];
-			if (has_any_role(roles, ["Finance Manager", "CFO", "System Manager"])) {
-				frm.add_custom_button(__("Record Bank Deposit"), () => show_bank_deposit_dialog(frm));
-			}
-		}
 	},
 });
-
-function has_any_role(user_roles, required_roles) {
-	return required_roles.some((role) => user_roles.includes(role));
-}
 
 function fetch_pending(frm) {
 	if (!frm.doc.company) {
@@ -111,63 +92,6 @@ function receive_closing(frm) {
 			frappe.show_alert({ message: __("Donation Closing received"), indicator: "green" });
 		},
 	});
-}
-
-function show_bank_deposit_dialog(frm) {
-	const dialog = new frappe.ui.Dialog({
-		title: __("Record Bank Deposit"),
-		fields: [
-			{
-				fieldname: "bank_deposit_date",
-				fieldtype: "Date",
-				label: __("Cash Deposit Slip Date"),
-				reqd: 1,
-				default: frm.doc.bank_deposit_date || frappe.datetime.get_today(),
-			},
-			{
-				fieldname: "bank_deposit_reference",
-				fieldtype: "Data",
-				label: __("Deposit Reference"),
-				default: frm.doc.bank_deposit_reference,
-			},
-			{
-				fieldname: "bank_account",
-				fieldtype: "Link",
-				label: __("Bank Account"),
-				options: "Account",
-				reqd: 1,
-				default: frm.doc.bank_account,
-				get_query() {
-					return {
-						filters: {
-							is_group: 0,
-							account_type: "Bank",
-							company: frm.doc.company,
-						},
-					};
-				},
-			},
-		],
-		primary_action_label: __("Submit Bank Deposit"),
-		primary_action(values) {
-			dialog.hide();
-			frappe.call({
-				doc: frm.doc,
-				method: "submit_bank_deposit",
-				args: {
-					bank_deposit_date: values.bank_deposit_date,
-					bank_deposit_reference: values.bank_deposit_reference,
-					bank_account: values.bank_account,
-				},
-				freeze: true,
-				callback() {
-					frm.reload_doc();
-					frappe.show_alert({ message: __("Bank deposit recorded"), indicator: "green" });
-				},
-			});
-		},
-	});
-	dialog.show();
 }
 
 function format_currency(amount) {

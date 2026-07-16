@@ -33,12 +33,10 @@ frappe.ui.form.on("Donation Order", {
 			filters: mohasil_employee_filters,
 		}));
 
-		frm.set_query("donation_book", () => ({
+		frm.set_query("donation_book_serial_no", () => ({
+			query: "donation_management.donation_management.doctype.book.book.get_mohasil_donation_book_serials",
 			filters: {
-				book_type: "Donation Book",
-				status: "Returned",
-				issued_to_employee: frm.doc.mohasil || "",
-				remaining_receipts: [">", 0],
+				mohasil: frm.doc.mohasil || "",
 			},
 		}));
 
@@ -227,9 +225,16 @@ frappe.ui.form.on("Donation Order", {
 	},
 
 	mohasil(frm) {
+		if (frm.doc.donation_book_serial_no) {
+			frm.set_value("donation_book_serial_no", "");
+		}
 		if (frm.doc.donation_book) {
 			frm.set_value("donation_book", "");
 		}
+	},
+
+	donation_book_serial_no(frm) {
+		set_donation_book_from_serial(frm);
 	},
 
 	cash_denominations_add(frm) {
@@ -1045,8 +1050,11 @@ function clear_donor_details(frm) {
 	set_value_if_changed(frm, "referred_by_trustee", "");
 	set_value_if_changed(frm, "is_mohasil_collection", 0);
 	set_value_if_changed(frm, "mohasil", "");
+	set_value_if_changed(frm, "donation_book_serial_no", "");
+	set_value_if_changed(frm, "donation_book", "");
 	set_value_if_changed(frm, "manual_receipt_number", "");
 	set_value_if_changed(frm, "manual_receipt_date", "");
+	clear_purpose_receipt_numbers(frm);
 	set_previous_sponsorship_balance(frm);
 	render_donor_program_enrollments(frm);
 }
@@ -1113,18 +1121,57 @@ function toggle_mohasil_details(frm) {
 	const show_mohasil_details = cint(frm.doc.is_mohasil_collection);
 	frm.toggle_display("mohasil_section", show_mohasil_details);
 	frm.toggle_reqd("mohasil", show_mohasil_details);
-	frm.toggle_reqd("donation_book", show_mohasil_details);
-	frm.toggle_reqd("manual_receipt_number", show_mohasil_details);
+	frm.toggle_reqd("donation_book_serial_no", show_mohasil_details);
 	frm.toggle_reqd("cash_denominations", show_mohasil_details);
+	toggle_purpose_receipt_number_column(frm, show_mohasil_details);
 
 	if (!show_mohasil_details) {
 		set_value_if_changed(frm, "mohasil", "");
+		set_value_if_changed(frm, "donation_book_serial_no", "");
 		set_value_if_changed(frm, "donation_book", "");
 		set_value_if_changed(frm, "manual_receipt_number", "");
 		set_value_if_changed(frm, "manual_receipt_date", "");
+		clear_purpose_receipt_numbers(frm);
 		frm.clear_table("cash_denominations");
 		frm.refresh_field("cash_denominations");
 	}
+}
+
+function set_donation_book_from_serial(frm) {
+	if (!frm.doc.donation_book_serial_no) {
+		set_value_if_changed(frm, "donation_book", "");
+		return;
+	}
+
+	frappe.call({
+		method: "donation_management.donation_management.doctype.book.book.get_donation_book_for_serial",
+		args: {
+			book_serial_no: frm.doc.donation_book_serial_no,
+			mohasil: frm.doc.mohasil,
+		},
+		callback(response) {
+			const book = response.message || {};
+			set_value_if_changed(frm, "donation_book", book.name || "");
+		},
+	});
+}
+
+function toggle_purpose_receipt_number_column(frm, show) {
+	const grid = frm.fields_dict.purpose_details && frm.fields_dict.purpose_details.grid;
+	if (!grid) {
+		return;
+	}
+
+	grid.update_docfield_property("manual_receipt_number", "hidden", show ? 0 : 1);
+	grid.update_docfield_property("manual_receipt_number", "reqd", show ? 1 : 0);
+	grid.refresh();
+}
+
+function clear_purpose_receipt_numbers(frm) {
+	(frm.doc.purpose_details || []).forEach((row) => {
+		row.manual_receipt_number = "";
+	});
+	frm.refresh_field("purpose_details");
 }
 
 function set_mohasil_from_selected_donor(frm) {

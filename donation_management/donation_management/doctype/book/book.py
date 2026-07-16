@@ -32,6 +32,7 @@ class Book(Document):
 	def validate(self):
 		self.set_defaults()
 		self.validate_book_type()
+		self.set_book_serial_numbers()
 		self.validate_status_transition()
 		self.validate_issue_permission()
 		if self.is_coupon_book():
@@ -58,6 +59,7 @@ class Book(Document):
 			self.validate_book_serial_no()
 			self.validate_donation_book_details()
 			self.validate_cash_denominations()
+		self.validate_assigned_books()
 
 	def on_update(self):
 		if self.is_coupon_book():
@@ -81,6 +83,14 @@ class Book(Document):
 		if self.book_type not in (BOOK_TYPE_COUPON, BOOK_TYPE_DONATION):
 			frappe.throw(frappe._("Book Type must be Coupon Book or Donation Book."))
 
+	def set_book_serial_numbers(self):
+		if self.is_donation_book() and self.assigned_books:
+			self.book_serial_numbers = ", ".join(
+				row.book_serial_no for row in self.assigned_books if row.book_serial_no
+			)
+		else:
+			self.book_serial_numbers = self.book_serial_no
+
 	def validate_coupon_type(self):
 		if self.coupon_type not in COUPON_COLORS:
 			frappe.throw(frappe._("Coupon Type must be Zakat, Atiya, Fitra, or Fidya."))
@@ -90,8 +100,10 @@ class Book(Document):
 			frappe.throw(frappe._("Item is required for Book."))
 		if not self.warehouse:
 			frappe.throw(frappe._("Warehouse is required for Book."))
-		if not self.book_serial_no:
+		if self.is_coupon_book() and not self.book_serial_no:
 			frappe.throw(frappe._("Book Serial No is required for Book."))
+		if self.is_donation_book() and not (self.assigned_books or self.book_serial_no):
+			frappe.throw(frappe._("At least one Book Serial No is required in Assigned Books."))
 		if not self.issued_to_employee:
 			frappe.throw(frappe._("Issued To Employee is required for Book."))
 
@@ -217,12 +229,34 @@ class Book(Document):
 		self.to_receipt_no = None
 		self.used_receipts = 0
 		self.remaining_receipts = 0
+		self.set("assigned_books", [])
 
 	def validate_donation_book_details(self):
 		validate_mohasil_employee(self.issued_to_employee, "Issued To Employee")
 
 		if not is_donation_book_item(self.item):
 			frappe.throw(frappe._("Only Donation Book Items can be selected for Donation Book."))
+
+		if self.assigned_books:
+			total_used_receipts = 0
+			total_remaining_receipts = 0
+			for row in self.assigned_books:
+				self.validate_assigned_book_receipt_range(row)
+				row.used_receipts = get_donation_book_used_receipts(
+					self.name,
+					from_receipt_no=row.from_receipt_no,
+					to_receipt_no=row.to_receipt_no,
+				) if not self.is_new() else cint(row.used_receipts)
+				row.remaining_receipts = max(
+					get_receipt_range_count(row.from_receipt_no, row.to_receipt_no) - cint(row.used_receipts),
+					0,
+				)
+				total_used_receipts += cint(row.used_receipts)
+				total_remaining_receipts += cint(row.remaining_receipts)
+
+			self.used_receipts = total_used_receipts
+			self.remaining_receipts = total_remaining_receipts
+			return
 
 		if not self.from_receipt_no or not self.to_receipt_no:
 			frappe.throw(frappe._("From Receipt No and To Receipt No are required for Donation Book."))
@@ -237,6 +271,120 @@ class Book(Document):
 		else:
 			self.used_receipts = cint(self.used_receipts)
 		self.remaining_receipts = max(get_receipt_range_count(self.from_receipt_no, self.to_receipt_no) - self.used_receipts, 0)
+
+	def validate_assigned_book_receipt_range(self, row):
+		if not row.from_receipt_no or not row.to_receipt_no:
+			frappe.throw(frappe._("From Receipt No and To Receipt No are required in Assigned Books row {0}.").format(row.idx))
+
+		from_receipt_no = get_receipt_number_int(row.from_receipt_no, "From Receipt No")
+		to_receipt_no = get_receipt_number_int(row.to_receipt_no, "To Receipt No")
+		if from_receipt_no > to_receipt_no:
+			frappe.throw(frappe._("From Receipt No cannot be greater than To Receipt No in Assigned Books row {0}.").format(row.idx))
+
+	def validate_assigned_books(self):
+		if not self.is_donation_book():
+			self.set("assigned_books", [])
+			return
+
+		if not self.assigned_books:
+			if self.book_serial_no:
+				return
+			frappe.throw(frappe._("At least one row is required in Assigned Books."))
+
+		if self.book_serial_no:
+			self.book_serial_no = None
+
+		if not self.assigned_books:
+			return
+
+		if not self.issued_to_employee:
+			frappe.throw(frappe._("Issued To Employee is required before assigning multiple books."))
+
+		seen_serials = set()
+		for row in self.assigned_books:
+			if not row.book_serial_no:
+				frappe.throw(frappe._("Book Serial No is required in Assigned Books row {0}.").format(row.idx))
+			if row.book_serial_no in seen_serials:
+				frappe.throw(
+					frappe._("Book Serial No {0} is selected more than once in Assigned Books.").format(
+						row.book_serial_no
+					)
+				)
+			seen_serials.add(row.book_serial_no)
+
+			self.validate_assigned_book_serial_no(row)
+			self.validate_book_serial_not_assigned_elsewhere(row.book_serial_no)
+
+	def validate_assigned_book_serial_no(self, row):
+		serial_no = frappe.db.get_value(
+			"Serial No",
+			row.book_serial_no,
+			["item_code", "warehouse"],
+			as_dict=True,
+		)
+		if not serial_no:
+			frappe.throw(frappe._("Book Serial No {0} was not found.").format(row.book_serial_no))
+		if serial_no.item_code != self.item:
+			frappe.throw(
+				frappe._("Book Serial No {0} belongs to Item {1}, not {2}.").format(
+					row.book_serial_no,
+					serial_no.item_code,
+					self.item,
+				)
+			)
+
+		if not self.stock_entry and serial_no.warehouse != self.warehouse:
+			frappe.throw(
+				frappe._("Book Serial No {0} is not available in Warehouse {1}.").format(
+					row.book_serial_no,
+					self.warehouse,
+				)
+			)
+
+		existing_book = frappe.db.exists(
+			"Book",
+			{
+				"book_serial_no": row.book_serial_no,
+				"name": ["!=", self.name],
+				"docstatus": ["!=", 2],
+			},
+		)
+		if existing_book:
+			frappe.throw(
+				frappe._("Book Serial No {0} is already linked with Book {1}.").format(
+					row.book_serial_no,
+					existing_book,
+				)
+			)
+
+		row.item = serial_no.item_code
+		row.warehouse = self.warehouse
+		row.status = self.status
+
+	def validate_book_serial_not_assigned_elsewhere(self, book_serial_no):
+		existing = frappe.db.sql(
+			"""
+			select detail.parent
+			from `tabBook Assignment Detail` detail
+			inner join `tabBook` parent
+				on parent.name = detail.parent
+			where detail.book_serial_no = %(book_serial_no)s
+				and parent.name != %(current_book)s
+				and parent.docstatus != 2
+			limit 1
+			""",
+			{
+				"book_serial_no": book_serial_no,
+				"current_book": self.name,
+			},
+		)
+		if existing:
+			frappe.throw(
+				frappe._("Book Serial No {0} is already assigned in Book {1}.").format(
+					book_serial_no,
+					existing[0][0],
+				)
+			)
 
 	def validate_book_serial_no(self):
 		if not self.book_serial_no:
@@ -282,6 +430,8 @@ class Book(Document):
 					existing_book,
 				)
 			)
+
+		self.validate_book_serial_not_assigned_elsewhere(self.book_serial_no)
 
 	def validate_cash_denominations(self):
 		if self.status in ("Returned", "Closed"):
@@ -392,7 +542,10 @@ def issue_book(book):
 		frappe.throw(frappe._("Book {0} is already linked with Stock Entry {1}.").format(doc.name, doc.stock_entry))
 
 	doc.validate_book_stock_details()
-	doc.validate_book_serial_no()
+	if doc.is_donation_book():
+		doc.validate_assigned_books()
+	else:
+		doc.validate_book_serial_no()
 	stock_entry = create_book_issue_stock_entry(doc)
 	doc.stock_entry = stock_entry.name
 	doc.status = "Issued"
@@ -401,6 +554,8 @@ def issue_book(book):
 
 
 def create_book_issue_stock_entry(doc):
+	items = get_book_issue_items(doc)
+	serial_numbers = ", ".join(item["serial_no"] for item in items)
 	stock_entry = frappe.get_doc(
 		{
 			"doctype": "Stock Entry",
@@ -412,24 +567,40 @@ def create_book_issue_stock_entry(doc):
 			"remarks": "Book Issue: {0} | Type: {1} | Serial No: {2} | Issued To: {3}".format(
 				doc.name,
 				doc.book_type,
-				doc.book_serial_no,
+				serial_numbers,
 				doc.issued_to_employee,
 			),
-			"items": [
-				{
-					"item_code": doc.item,
-					"s_warehouse": doc.warehouse,
-					"qty": 1,
-					"use_serial_batch_fields": 1,
-					"serial_no": doc.book_serial_no,
-				}
-			],
+			"items": items,
 		}
 	)
 	stock_entry.flags.ignore_permissions = True
 	stock_entry.insert(ignore_permissions=True)
 	stock_entry.submit()
 	return stock_entry
+
+
+def get_book_issue_items(doc):
+	if doc.is_donation_book() and doc.assigned_books:
+		return [
+			{
+				"item_code": row.item or doc.item,
+				"s_warehouse": row.warehouse or doc.warehouse,
+				"qty": 1,
+				"use_serial_batch_fields": 1,
+				"serial_no": row.book_serial_no,
+			}
+			for row in doc.assigned_books
+		]
+
+	return [
+		{
+			"item_code": doc.item,
+			"s_warehouse": doc.warehouse,
+			"qty": 1,
+			"use_serial_batch_fields": 1,
+			"serial_no": doc.book_serial_no,
+		}
+	]
 
 
 @frappe.whitelist()
@@ -576,14 +747,19 @@ def close_book(book):
 
 
 @frappe.whitelist()
-def return_donation_book(book, collected_amount=None, denominations=None):
+def return_donation_book(book, collected_amount=None, denominations=None, book_collections=None):
 	doc = frappe.get_doc("Book", book)
 	if not doc.is_donation_book():
 		frappe.throw(frappe._("Only Donation Book records can be returned with this action."))
 	if doc.status != "Issued":
 		frappe.throw(frappe._("Only issued Donation Books can be returned."))
 
-	collected_amount = flt(collected_amount)
+	if book_collections:
+		collected_amount = set_donation_book_return_collections(doc, book_collections)
+		denominations = get_total_denominations_from_return_collections(book_collections)
+	else:
+		collected_amount = flt(collected_amount)
+
 	if collected_amount <= 0:
 		frappe.throw(frappe._("Total Amount Collected is required when returning a Donation Book."))
 
@@ -606,6 +782,93 @@ def set_cash_denominations(doc, denominations):
 					"note_count": cint(row.get("note_count")),
 				},
 			)
+
+
+def set_donation_book_return_collections(doc, book_collections):
+	book_collections = frappe.parse_json(book_collections) or []
+	if not book_collections:
+		frappe.throw(frappe._("Book return collection details are required."))
+
+	assigned_serials = {
+		row.book_serial_no
+		for row in doc.assigned_books
+		if row.book_serial_no
+	}
+	if not assigned_serials:
+		frappe.throw(frappe._("Assigned Books are required before returning a Donation Book."))
+
+	seen_serials = set()
+	total_collected_amount = 0
+	doc.set("return_collections", [])
+
+	for collection in book_collections:
+		book_serial_no = collection.get("book_serial_no")
+		if not book_serial_no:
+			frappe.throw(frappe._("Book Serial No is required in return collection details."))
+		if book_serial_no not in assigned_serials:
+			frappe.throw(
+				frappe._("Book Serial No {0} is not assigned to Book {1}.").format(
+					book_serial_no,
+					doc.name,
+				)
+			)
+		if book_serial_no in seen_serials:
+			frappe.throw(frappe._("Book Serial No {0} is repeated in return collection details.").format(book_serial_no))
+		seen_serials.add(book_serial_no)
+
+		collected_amount = flt(collection.get("collected_amount"))
+		denomination_total = get_denomination_total(collection)
+		if collected_amount <= 0:
+			frappe.throw(
+				frappe._("Collected Amount must be greater than zero for Book Serial No {0}.").format(
+					book_serial_no,
+				)
+			)
+		if flt(collected_amount, 2) != flt(denomination_total, 2):
+			frappe.throw(
+				frappe._("Cash denomination total must match Collected Amount for Book Serial No {0}.").format(
+					book_serial_no,
+				)
+			)
+
+		row = {
+			"book_serial_no": book_serial_no,
+			"collected_amount": collected_amount,
+			"denomination_total": denomination_total,
+		}
+		for denomination in DENOMINATIONS:
+			note_count = cint(collection.get(f"denomination_{denomination}"))
+			if note_count < 0:
+				frappe.throw(frappe._("Note count cannot be negative for denomination {0}.").format(denomination))
+			row[f"denomination_{denomination}"] = note_count
+
+		doc.append("return_collections", row)
+		total_collected_amount += collected_amount
+
+	return total_collected_amount
+
+
+def get_total_denominations_from_return_collections(book_collections):
+	book_collections = frappe.parse_json(book_collections) or []
+	totals = {denomination: 0 for denomination in DENOMINATIONS}
+	for collection in book_collections:
+		for denomination in DENOMINATIONS:
+			totals[denomination] += cint(collection.get(f"denomination_{denomination}"))
+
+	return [
+		{
+			"denomination": denomination,
+			"note_count": note_count,
+		}
+		for denomination, note_count in totals.items()
+	]
+
+
+def get_denomination_total(collection):
+	return sum(
+		denomination * cint(collection.get(f"denomination_{denomination}"))
+		for denomination in DENOMINATIONS
+	)
 
 
 def get_receipt_range_count(from_receipt_no, to_receipt_no):
@@ -633,25 +896,49 @@ def receipt_number_in_range(receipt_no, from_receipt_no, to_receipt_no):
 	return from_receipt_no <= receipt_no <= to_receipt_no
 
 
-def get_donation_book_used_receipts(book, exclude_order=None):
+def get_donation_book_used_receipts(book, exclude_order=None, from_receipt_no=None, to_receipt_no=None):
 	if not book:
 		return 0
 
-	conditions = ["donation_book = %(book)s", "docstatus != 2", "ifnull(manual_receipt_number, '') != ''"]
 	values = {"book": book}
+	exclude_condition = ""
 	if exclude_order:
-		conditions.append("name != %(exclude_order)s")
+		exclude_condition = "and parent.name != %(exclude_order)s"
 		values["exclude_order"] = exclude_order
 
+	receipt_rows = frappe.db.sql(
+		"""
+		select distinct receipt_number
+		from (
+			select detail.manual_receipt_number as receipt_number
+			from `tabDonation Order` parent
+			inner join `tabDonation Order Purpose Detail` detail
+				on detail.parent = parent.name
+			where parent.donation_book = %(book)s
+				and parent.docstatus != 2
+				and ifnull(detail.manual_receipt_number, '') != ''
+				{exclude_condition}
+			union
+			select parent.manual_receipt_number as receipt_number
+			from `tabDonation Order` parent
+			where parent.donation_book = %(book)s
+				and parent.docstatus != 2
+				and ifnull(parent.manual_receipt_number, '') != ''
+				{exclude_condition}
+		) receipts
+		""".format(exclude_condition=exclude_condition),
+		values,
+	)
+
+	if from_receipt_no is None or to_receipt_no is None:
+		return cint(len(receipt_rows))
+
 	return cint(
-		frappe.db.sql(
-			"""
-			select count(distinct manual_receipt_number)
-			from `tabDonation Order`
-			where {conditions}
-			""".format(conditions=" and ".join(conditions)),
-			values,
-		)[0][0]
+		sum(
+			1
+			for row in receipt_rows
+			if receipt_number_in_range(row[0], from_receipt_no, to_receipt_no)
+		)
 	)
 
 
@@ -690,7 +977,38 @@ def update_donation_book_receipt_usage(book):
 	if not book_values or book_values.book_type != BOOK_TYPE_DONATION:
 		return
 
-	total_receipts = get_receipt_range_count(book_values.from_receipt_no, book_values.to_receipt_no)
+	assigned_rows = frappe.get_all(
+		"Book Assignment Detail",
+		filters={
+			"parent": book,
+			"parenttype": "Book",
+			"parentfield": "assigned_books",
+		},
+		fields=["name", "from_receipt_no", "to_receipt_no"],
+	)
+	total_receipts = 0
+	if assigned_rows:
+		for row in assigned_rows:
+			row_total_receipts = get_receipt_range_count(row.from_receipt_no, row.to_receipt_no)
+			row_used_receipts = get_donation_book_used_receipts(
+				book,
+				from_receipt_no=row.from_receipt_no,
+				to_receipt_no=row.to_receipt_no,
+			)
+			row_remaining_receipts = max(row_total_receipts - row_used_receipts, 0)
+			frappe.db.set_value(
+				"Book Assignment Detail",
+				row.name,
+				{
+					"used_receipts": row_used_receipts,
+					"remaining_receipts": row_remaining_receipts,
+				},
+				update_modified=False,
+			)
+			total_receipts += row_total_receipts
+	else:
+		total_receipts = get_receipt_range_count(book_values.from_receipt_no, book_values.to_receipt_no)
+
 	used_receipts = get_donation_book_used_receipts(book)
 	remaining_receipts = max(total_receipts - used_receipts, 0)
 	frappe.db.set_value(
@@ -853,6 +1171,14 @@ def get_available_book_serial_nos(doctype, txt, searchfield, start, page_len, fi
 
 	search = "%%%s%%" % txt
 	current_book = filters.get("book")
+	selected_serials = filters.get("selected_serials") or []
+	if isinstance(selected_serials, str):
+		selected_serials = frappe.parse_json(selected_serials) or []
+	selected_serials = tuple(serial for serial in selected_serials if serial)
+	selected_serials_condition = ""
+	if selected_serials:
+		selected_serials_condition = "and serial.name not in %(selected_serials)s"
+
 	return frappe.db.sql(
 		"""
 		select serial.name, serial.item_code, serial.warehouse
@@ -860,6 +1186,7 @@ def get_available_book_serial_nos(doctype, txt, searchfield, start, page_len, fi
 		where serial.item_code = %(item)s
 			and serial.warehouse = %(warehouse)s
 			and serial.name like %(search)s
+			{selected_serials_condition}
 			and not exists (
 				select book.name
 				from `tabBook` book
@@ -867,18 +1194,167 @@ def get_available_book_serial_nos(doctype, txt, searchfield, start, page_len, fi
 					and book.docstatus != 2
 					and (%(book)s is null or book.name != %(book)s)
 			)
+			and not exists (
+				select detail.name
+				from `tabBook Assignment Detail` detail
+				inner join `tabBook` book
+					on book.name = detail.parent
+				where detail.book_serial_no = serial.name
+					and book.docstatus != 2
+					and (%(book)s is null or book.name != %(book)s)
+			)
 		order by serial.name
 		limit %(start)s, %(page_len)s
-		""",
+		""".format(selected_serials_condition=selected_serials_condition),
 		{
 			"item": filters.get("item"),
 			"warehouse": filters.get("warehouse"),
 			"book": current_book,
+			"selected_serials": selected_serials,
 			"search": search,
 			"start": cint(start),
 			"page_len": cint(page_len),
 		},
 	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_mohasil_donation_books(doctype, txt, searchfield, start, page_len, filters):
+	filters = frappe._dict(filters or {})
+	if not filters.get("mohasil"):
+		return []
+
+	search = "%%%s%%" % txt
+	return frappe.db.sql(
+		"""
+		select
+			book.name,
+			coalesce(nullif(book.book_serial_numbers, ''), serials.book_serial_numbers, book.name) as book_serial_numbers,
+			book.status,
+			book.warehouse,
+			book.issued_to_employee
+		from `tabBook` book
+		left join (
+			select parent, group_concat(book_serial_no order by idx separator ', ') as book_serial_numbers
+			from `tabBook Assignment Detail`
+			where ifnull(book_serial_no, '') != ''
+			group by parent
+		) serials
+			on serials.parent = book.name
+		where book.book_type = %(book_type)s
+			and book.status = %(status)s
+			and book.issued_to_employee = %(mohasil)s
+			and (
+				book.remaining_receipts > 0
+				or exists (
+					select detail.name
+					from `tabBook Assignment Detail` detail
+					where detail.parent = book.name
+						and detail.parenttype = 'Book'
+						and detail.parentfield = 'assigned_books'
+						and detail.remaining_receipts > 0
+				)
+			)
+			and (
+				book.name like %(search)s
+				or book.book_serial_numbers like %(search)s
+				or serials.book_serial_numbers like %(search)s
+				or book.item like %(search)s
+				or book.warehouse like %(search)s
+			)
+		order by book.modified desc
+		limit %(start)s, %(page_len)s
+		""",
+		{
+			"book_type": BOOK_TYPE_DONATION,
+			"status": "Returned",
+			"mohasil": filters.get("mohasil"),
+			"search": search,
+			"start": cint(start),
+			"page_len": cint(page_len),
+		},
+	)
+
+
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_mohasil_donation_book_serials(doctype, txt, searchfield, start, page_len, filters):
+	filters = frappe._dict(filters or {})
+	if not filters.get("mohasil"):
+		return []
+
+	search = "%%%s%%" % txt
+	return frappe.db.sql(
+		"""
+		select
+			detail.book_serial_no,
+			book.name,
+			book.status,
+			detail.from_receipt_no,
+			detail.to_receipt_no
+		from `tabBook Assignment Detail` detail
+		inner join `tabBook` book
+			on book.name = detail.parent
+		where book.book_type = %(book_type)s
+			and book.status = %(status)s
+			and book.issued_to_employee = %(mohasil)s
+			and book.docstatus != 2
+			and detail.parentfield = 'assigned_books'
+			and ifnull(detail.book_serial_no, '') != ''
+			and detail.remaining_receipts > 0
+			and (
+				detail.book_serial_no like %(search)s
+				or book.name like %(search)s
+				or detail.item like %(search)s
+				or detail.warehouse like %(search)s
+			)
+		order by detail.book_serial_no
+		limit %(start)s, %(page_len)s
+		""",
+		{
+			"book_type": BOOK_TYPE_DONATION,
+			"status": "Returned",
+			"mohasil": filters.get("mohasil"),
+			"search": search,
+			"start": cint(start),
+			"page_len": cint(page_len),
+		},
+	)
+
+
+@frappe.whitelist()
+def get_donation_book_for_serial(book_serial_no=None, mohasil=None):
+	if not book_serial_no or not mohasil:
+		return {}
+
+	result = frappe.db.sql(
+		"""
+		select
+			book.name,
+			detail.from_receipt_no,
+			detail.to_receipt_no,
+			detail.remaining_receipts
+		from `tabBook Assignment Detail` detail
+		inner join `tabBook` book
+			on book.name = detail.parent
+		where detail.book_serial_no = %(book_serial_no)s
+			and book.book_type = %(book_type)s
+			and book.status = %(status)s
+			and book.issued_to_employee = %(mohasil)s
+			and book.docstatus != 2
+			and detail.parentfield = 'assigned_books'
+		limit 1
+		""",
+		{
+			"book_serial_no": book_serial_no,
+			"book_type": BOOK_TYPE_DONATION,
+			"status": "Returned",
+			"mohasil": mohasil,
+		},
+		as_dict=True,
+	)
+	return result[0] if result else {}
 
 
 @frappe.whitelist()
